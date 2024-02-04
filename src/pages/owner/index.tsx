@@ -1,12 +1,9 @@
 import React, { useEffect } from 'react'
-import { Container } from 'postcss';
 import styles from './index.module.css'
 import {Card, CardHeader, CardBody, CardFooter, Avatar, Button} from "@nextui-org/react";
 
-import dynamic from 'next/dynamic';
+import { GithubOutlined,TwitterOutlined } from '@ant-design/icons';
 
-const DynamicTwitterIcon = dynamic(() => import('@ant-design/icons').then((icons) => icons.TwitterOutlined));
-const DynamicGithubIcon = dynamic(() => import('@ant-design/icons').then((icons) => icons.GithubOutlined));
 
 export default function Owner() {
   const [isFollowed, setIsFollowed] = React.useState(false);
@@ -75,12 +72,14 @@ export default function Owner() {
       </div>
 
       <div className={styles.footer}>
-        <a href="https://twitter.com/wbgz888" target='_bank' className={styles.link}>
-          <DynamicTwitterIcon />Twitter
-        </a>
-        <a href="https://github.com/hanguang254" target='_bank' className={styles.link}>
-          <DynamicGithubIcon />Github
-        </a>
+        
+          <a href="https://twitter.com/wbgz888" target='_bank' className={styles.link}>
+            <TwitterOutlined />Twitter
+          </a>
+          <a href="https://github.com/hanguang254" target='_bank' className={styles.link}>
+            <GithubOutlined />Github
+          </a>
+        
       </div>
     </div>
   )
