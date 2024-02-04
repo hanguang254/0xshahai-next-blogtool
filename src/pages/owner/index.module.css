@@ -38,7 +38,7 @@
     display: flex;
     justify-content: center;
     /* margin-top: 50px; */
-    height: 200px;
+    height: 100px;
 }
   
 .footer a {
@@ -51,7 +51,3 @@
     text-decoration: none;
     color: inherit;
 }
-
-.link svg {
-    margin-right: 5px; /* 调整图标与文字之间的间距 */
-  }

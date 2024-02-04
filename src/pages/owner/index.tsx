@@ -25,7 +25,7 @@ export default function Owner() {
 
       <div className={styles.content}>
         <h2>拥抱Web3.0</h2>
-        <h2>新的机会伴随着新的骗局保护好自己</h2>
+        <h2>机会和风险同在保护好自己</h2>
         <h2>机会永远比风险多</h2>
       </div>
 
