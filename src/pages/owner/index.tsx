@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react'
 import styles from './index.module.css'
 import {Card, CardHeader, CardBody, CardFooter, Avatar, Button} from "@nextui-org/react";
+import Image from 'next/image';
 
-import { GithubOutlined,TwitterOutlined } from '@ant-design/icons';
 
 
 export default function Owner() {
@@ -74,10 +74,11 @@ export default function Owner() {
       <div className={styles.footer}>
         
           <a href="https://twitter.com/wbgz888" target='_bank' className={styles.link}>
-            <TwitterOutlined />Twitter
+            
+            <Image src='/twitter.svg' alt={''} color='' width={24} height={24}></Image> Twitter
           </a>
           <a href="https://github.com/hanguang254" target='_bank' className={styles.link}>
-            <GithubOutlined />Github
+            <Image src='/github.svg' alt={''} color='' width={24} height={24}></Image>Github
           </a>
         
       </div>
