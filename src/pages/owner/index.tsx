@@ -5,8 +5,8 @@ import {Card, CardHeader, CardBody, CardFooter, Avatar, Button} from "@nextui-or
 
 import dynamic from 'next/dynamic';
 
-const DynamicTwitterIcon = dynamic(() => import('@ant-design/icons/TwitterOutlined'));
-const DynamicGithubIcon = dynamic(() => import('@ant-design/icons/GithubOutlined'));
+const DynamicTwitterIcon = dynamic(() => import('@ant-design/icons').then((icons) => icons.TwitterOutlined));
+const DynamicGithubIcon = dynamic(() => import('@ant-design/icons').then((icons) => icons.GithubOutlined));
 
 export default function Owner() {
   const [isFollowed, setIsFollowed] = React.useState(false);
