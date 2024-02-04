@@ -45,7 +45,7 @@ export default function App() {
       </NavbarContent>
       <NavbarContent justify="end">
         <NavbarItem>
-          <Button as={Link} color="primary" href="#" variant="flat">
+          <Button isDisabled as={Link} color="primary" href="#" variant="flat">
             connect wallet
           </Button>
         </NavbarItem>

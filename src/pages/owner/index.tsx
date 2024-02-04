@@ -1,10 +1,23 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Container } from 'postcss';
 import styles from './index.module.css'
 import {Card, CardHeader, CardBody, CardFooter, Avatar, Button} from "@nextui-org/react";
 
+import dynamic from 'next/dynamic';
+
+const DynamicTwitterIcon = dynamic(() => import('@ant-design/icons/TwitterOutlined'));
+const DynamicGithubIcon = dynamic(() => import('@ant-design/icons/GithubOutlined'));
+
 export default function Owner() {
   const [isFollowed, setIsFollowed] = React.useState(false);
+
+
+  useEffect(() => {
+    // Check if running in the browser environment
+    if (typeof window !== 'undefined') {
+      // Your browser-specific code here
+    }
+  }, []);
 
   return (
     <div className={styles.container}>
@@ -12,8 +25,12 @@ export default function Owner() {
         <Avatar src="/a.jpg" className="w-28 h-28" />
       </div>
       <div className={styles.titleContainer}><h2>沙海 0xshahai</h2></div>
-      <div>看不懂人性是所有痛苦的根源</div>
-      <div>狭隘的认知时所有贫穷的源头</div>
+
+      <div className={styles.content}>
+        <h2>拥抱Web3.0</h2>
+        <h2>新的机会伴随着新的骗局保护好自己</h2>
+        <h2>机会永远比风险多</h2>
+      </div>
 
       <div className={styles.twCard}>
         <Card className="max-w-[340px]">
@@ -57,8 +74,13 @@ export default function Owner() {
         </Card>
       </div>
 
-      <div>
-        
+      <div className={styles.footer}>
+        <a href="https://twitter.com/wbgz888" target='_bank' className={styles.link}>
+          <DynamicTwitterIcon />Twitter
+        </a>
+        <a href="https://github.com/hanguang254" target='_bank' className={styles.link}>
+          <DynamicGithubIcon />Github
+        </a>
       </div>
     </div>
   )

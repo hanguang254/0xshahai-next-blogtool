@@ -17,10 +17,41 @@
 
 .titleContainer{
     font-weight: bold;
-    font-size: larger;
+    font-size: 30px;
     margin-bottom: 20px;
 }
+
+.content{ 
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: center; 
+    font-size: large;
+}
+
 
 .twCard{
     margin-top: 30px;
 }
+
+.footer {
+    display: flex;
+    justify-content: center;
+    /* margin-top: 50px; */
+    height: 200px;
+}
+  
+.footer a {
+    margin: 0 10px; /* 调整链接之间的间距 */
+}
+
+.link{
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+    color: inherit;
+}
+
+.link svg {
+    margin-right: 5px; /* 调整图标与文字之间的间距 */
+  }
