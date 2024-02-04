@@ -1,0 +1,26 @@
+
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: center; 
+    padding-left: 50px;
+    padding-right: 50px;
+}
+  
+.avatarContainer {
+    margin-bottom: 20px; /* 添加底边距，让后面的内容与头像之间有一些间隔 */
+    margin-top: 80px;
+
+}
+
+.titleContainer{
+    font-weight: bold;
+    font-size: larger;
+    margin-bottom: 20px;
+}
+
+.twCard{
+    margin-top: 30px;
+}

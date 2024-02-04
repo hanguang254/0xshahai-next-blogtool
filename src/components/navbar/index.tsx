@@ -10,7 +10,7 @@ export default function App() {
   const menuItems = [
     { label: "主页", route: "/owner" },
     { label: "Web3工具", route: "/tools" },
-    { label: "看线", route: "/" },
+    { label: "Web3导航", route: "/"},
   ];
 
   return (
@@ -38,8 +38,8 @@ export default function App() {
           </Link>
         </NavbarItem>
         <NavbarItem>
-          <Link color="foreground" href="#">
-            页面三
+          <Link color="foreground" href="/page3" >
+            Web3导航
           </Link>
         </NavbarItem>
       </NavbarContent>
