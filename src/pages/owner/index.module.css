@@ -50,4 +50,5 @@
     align-items: center;
     text-decoration: none;
     color: inherit;
+    gap: 5px; /* 图标和文字距离控制 */
 }

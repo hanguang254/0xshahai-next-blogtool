@@ -10,7 +10,7 @@ export default function App() {
   const menuItems = [
     { label: "主页", route: "/owner" },
     { label: "Web3工具", route: "/tools" },
-    { label: "Web3导航", route: "/"},
+    { label: "Web3导航", route: "/page3"},
   ];
 
   return (
