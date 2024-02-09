@@ -52,7 +52,7 @@ export default function Owner() {
           </CardHeader>
           <CardBody className="px-3 py-0 text-small text-default-400">
             <p>
-              看不懂人性是所有痛苦的根源,狭隘的认知时所有贫穷的源头
+              看不懂人性是所有痛苦的根源,狭隘的认知是所有贫穷的源头
             </p>
             <span className="pt-2">
               沙海 0xshahai
