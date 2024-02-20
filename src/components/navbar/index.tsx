@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {Navbar, NavbarBrand, NavbarContent, NavbarItem, Link, Button, NavbarMenuItem, NavbarMenu, NavbarMenuToggle} from "@nextui-org/react";
 import {AcmeLogo} from "./AcmeLogo.jsx";
 import { useRouter } from "next/router.js";
@@ -12,6 +12,24 @@ export default function App() {
     { label: "Web3工具", route: "/tools" },
     { label: "Web3导航", route: "/page3"},
   ];
+
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      // 获取当前哈希路由
+      const hashRoute = window.location.hash.substring(1);
+      // 使用 router.replace 触发路由变化
+      router.replace(hashRoute, undefined, { shallow: true });
+    };
+
+    // 添加哈希路由变化事件监听
+    window.addEventListener("hashchange", handleHashChange);
+
+    return () => {
+      // 在组件卸载时移除事件监听
+      window.removeEventListener("hashchange", handleHashChange);
+    };
+  }, [router]);
 
   return (
     <Navbar onMenuOpenChange={setIsMenuOpen}>
@@ -27,21 +45,13 @@ export default function App() {
       </NavbarContent>
 
       <NavbarContent className="hidden sm:flex gap-16" justify="center">
-        <NavbarItem>
-          <Link color="foreground" href="/owner">
-            主页
-          </Link>
-        </NavbarItem>
-        <NavbarItem >
-          <Link href="/tools" color="foreground">
-            Web3工具
-          </Link>
-        </NavbarItem>
-        <NavbarItem>
-          <Link color="foreground" href="/page3" >
-            Web3导航
-          </Link>
-        </NavbarItem>
+        {menuItems.map((item, index) => (
+          <NavbarItem key={`${item.label}-${index}`}>
+            <Link color="foreground" href={`#${item.route}`}>
+              {item.label}
+            </Link>
+          </NavbarItem>
+        ))}
       </NavbarContent>
       <NavbarContent justify="end">
         <NavbarItem>
