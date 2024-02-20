@@ -1,19 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    // async redirects() {
-    //     return [
-    //       {
-    //         source: '/',
-    //         destination: '/owner',
-    //         permanent: true,
-    //       },
-    //     ];
-    //   },
-    exportPathMap: function () {
-      return {
-        "/": { page: "/owner" },
-      };
-    },
+    async redirects() {
+        return [
+          {
+            source: '/',
+            destination: '/owner',
+            permanent: true,
+          },
+        ];
+      },
     useFileSystemPublicRoutes: true,
     useHashRouting: true,
 };
