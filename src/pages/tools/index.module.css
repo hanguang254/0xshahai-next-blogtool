@@ -14,3 +14,9 @@
     align-items: center;
     justify-content: center;
 }
+
+.HyperlaneTab{
+    /* padding-left: 30px;
+    padding-right: 30px; */
+    width: 100%;
+}
