@@ -39,7 +39,8 @@ const config: Config = {
         // ... custom themes
       },
     })
-],
+  ],
+  
 };
 export default config;
 

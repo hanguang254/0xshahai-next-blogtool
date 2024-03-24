@@ -17,7 +17,11 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve"
+    "jsx": "preserve",
+    "baseUrl": ".", // 设置项目的基本路径
+    "paths": {
+      "@/*": ["src/*"] // 设置别名映射
+    }
   },
   "include": [
     "next-env.d.ts",
