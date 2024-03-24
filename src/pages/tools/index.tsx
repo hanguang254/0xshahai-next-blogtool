@@ -3,7 +3,7 @@ import styles from './index.module.css'
 import {Tabs, Tab, Card, CardBody} from "@nextui-org/react";
 import {Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, getKeyValue} from "@nextui-org/react";
 import {Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, useDisclosure} from "@nextui-org/react";
-import {Textarea} from "@nextui-org/react";
+import {Textarea,CircularProgress,Spinner} from "@nextui-org/react";
 import { ethers } from "ethers";
 
 type SelectedKey=[selectedKeys:any, setSelectedKeys:any]
@@ -120,9 +120,6 @@ useEffect(() => {
 const fetchData = async () => {
   setIsLoading(true);
   try {
-    const Rows = JSON.parse(localStorage.getItem('Rows') || '[]');
-    setRows(Rows);
-
     const cachedRows = localStorage.getItem('Rows');
     if (cachedRows) {
       const parsedRows = JSON.parse(cachedRows);
@@ -206,7 +203,11 @@ return (
             <TableHeader columns={columns}>
               {(column) => <TableColumn key={column.key}>{column.label}</TableColumn>}
             </TableHeader>
-            <TableBody items={rows}>
+            <TableBody 
+              items={rows} 
+              isLoading={isLoading}
+              loadingContent={<Spinner label="Loading..." />}
+            >
               {(item) => (
                 <TableRow key={item.key}>
                   {(columnKey) => <TableCell width={1000}>{getKeyValue(item, columnKey)}</TableCell>}
@@ -230,7 +231,7 @@ return (
                   <ModalBody>
                       <Textarea
                         label="地址输入"
-                        placeholder="一行一个地址,无交互记录的地址不展示"
+                        placeholder="一行一个地址,建议一次添加地址不要超过20个，无交互记录的地址不展示"
                         size='lg'
                         fullWidth={true}
                         minRows={10}
@@ -259,7 +260,7 @@ return (
         </Tab>
       </Tabs>
 
-      {isLoading && <div className="loading">Loading...</div>} {/* 加载状态 */}
+      {isLoading && <CircularProgress label="Loading..." />} {/* 加载状态 */}
 
     </div>
   )
