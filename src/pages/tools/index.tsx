@@ -73,13 +73,6 @@ const [rows, setRows] = useState([]);
 
 const [isLoading, setIsLoading] = useState(false); // 加载状态
 
-useEffect(() => {
-  // 从本地存储读取缓存数据
-  const cachedRows = JSON.parse(localStorage.getItem('Rows') || '[]');
-  setRows(cachedRows);
-}, []); // 空数组作为依赖项，表示只在组件挂载时执行一次
-
-
 //打开模态框
 const handleOpen = () => {
   onOpen();
@@ -119,6 +112,9 @@ const timemath =(timestamp:any)=>{
 }
 
 useEffect(() => {
+  const Rows = JSON.parse(localStorage.getItem('Rows') || '[]');
+  setRows(Rows);
+
   const cachedRows = localStorage.getItem('Rows');
   if (cachedRows) {
     try {
