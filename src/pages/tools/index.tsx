@@ -73,6 +73,7 @@ const [rows, setRows] = useState([]);
 
 const [isLoading, setIsLoading] = useState(false); // 加载状态
 
+
 //打开模态框
 const handleOpen = () => {
   onOpen();
@@ -112,83 +113,80 @@ const timemath =(timestamp:any)=>{
 }
 
 useEffect(() => {
-  const Rows = JSON.parse(localStorage.getItem('Rows') || '[]');
-  setRows(Rows);
+  fetchData();
+}, [address]);
 
-  const cachedRows = localStorage.getItem('Rows');
-  if (cachedRows) {
-    try {
+const fetchData = async () => {
+  setIsLoading(true);
+  try {
+    const Rows = JSON.parse(localStorage.getItem('Rows') || '[]');
+    setRows(Rows);
+
+    const cachedRows = localStorage.getItem('Rows');
+    if (cachedRows) {
       const parsedRows = JSON.parse(cachedRows);
-      parsedRows.forEach(async (value: any) => {
+      await Promise.all(parsedRows.map(async (value: any) => {
         try {
-          // 获取每个地址的详细信息
           const res = await APISearch(value.address);
           const yearArray: any = [];
           const monthArray: any = [];
           const dayArray: any = [];
           res.result.forEach((tx: any) => {
-            // 对每个交易记录进行时间处理
             const [year, month, day] = timemath(tx.origin.timestamp);
             yearArray.push(year);
             monthArray.push(month);
             dayArray.push(`${month}-${day}`);
           });
-          // 使用 Set 对数组进行去重
           const uniqueYears = [...new Set(yearArray)];
           const uniqueMonths = [...new Set(monthArray)];
           const uniqueDays = [...new Set(dayArray)];
 
-          // 在这里进行进一步的处理，或者更新状态
-          console.log(uniqueYears, uniqueMonths, uniqueDays);
-
-          value.years = uniqueYears.length
-          value.month = uniqueMonths.length
-          value.day = uniqueDays.length
-
-          
+          value.years = uniqueYears.length;
+          value.month = uniqueMonths.length;
+          value.day = uniqueDays.length;
         } catch (error) {
           console.error('获取地址信息时出错：', error);
         }
+      }));
 
-        setRows(parsedRows)
-
-        // 将更新后的数据重新存储到本地缓存中
-          localStorage.setItem('Rows', JSON.stringify(parsedRows));
-      });
-    } catch (error) {
-      console.error('解析本地缓存数据时出错：', error);
+      setRows(parsedRows);
+      localStorage.setItem('Rows', JSON.stringify(parsedRows));
+    } else {
+      console.log('本地缓存中没有对应的数据');
     }
-  } else {
-    console.log('本地缓存中没有对应的数据');
+  } catch (error) {
+    console.error('解析本地缓存数据时出错：', error);
+  } finally {
+    setIsLoading(false);
   }
-}, []);
+};
 
 const handleSearch = async() =>{
-  setIsLoading(true); // 设置加载状态为 true
-  const newRows:any = await Promise.all(address.map(async (addressItem) => {
-    const res = await APISearch(addressItem);
-    if (res.result && res.result.length > 0) {
-      const message = res.result[0]; // 假设只取返回结果的第一个消息对象
-      console.log(message);
-      
-      return {
-        key: message.id, // 使用消息的 id 作为行的 key
-        count: res.result.length || 0, // 假设 numPayments 表示跨链次数
-        day: '' || 0,
-        month:"" || 0,
-        years: ""|| 0,
-        ETHgas: Number(ethers.formatEther(message.totalPayment))*res.result.length || 0,
-        address: addressItem,
-      };
-    }
-    return null;
-  }));
-  // 使用函数式更新，将新数据追加到现有数据之后
-  setRows(prevRows => [...prevRows, ...newRows.filter(row => row !== null)]);
+    setIsLoading(true); // 设置加载状态为 true
+    const newRows:any = await Promise.all(address.map(async (addressItem) => {
+      const res = await APISearch(addressItem);
+      if (res.result && res.result.length > 0) {
+        const message = res.result[0]; // 假设只取返回结果的第一个消息对象
+        console.log(message);
+        
+        return {
+          key: message.id, // 使用消息的 id 作为行的 key
+          count: res.result.length || 0, // 假设 numPayments 表示跨链次数
+          ETHgas: Number(ethers.formatEther(message.totalPayment))*res.result.length || 0,
+          address: addressItem,
+        };
+      }
+      return null;
+    }));
+    // 使用函数式更新，将新数据追加到现有数据之后
+    setRows(prevRows => [...prevRows, ...newRows.filter(row => row !== null)]);
 
-  setIsLoading(false);
-  // 将新数据保存到本地存储
-  localStorage.setItem('Rows', JSON.stringify([...rows, ...newRows.filter(row => row !== null)]));
+    setIsLoading(false);
+    // 将新数据保存到本地存储
+    localStorage.setItem('Rows', JSON.stringify([...rows, ...newRows.filter(row => row !== null)]));
+
+    // 立即执行 useEffect
+    fetchData();
 }
 
 return (
