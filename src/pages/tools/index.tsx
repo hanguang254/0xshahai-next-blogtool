@@ -131,7 +131,7 @@ useEffect(() => {
             const [year, month, day] = timemath(tx.origin.timestamp);
             yearArray.push(year);
             monthArray.push(month);
-            dayArray.push(day);
+            dayArray.push(`${month}-${day}`);
           });
           // 使用 Set 对数组进行去重
           const uniqueYears = [...new Set(yearArray)];
