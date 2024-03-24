@@ -206,7 +206,7 @@ return (
             <TableBody 
               items={rows} 
               isLoading={isLoading}
-              loadingContent={<Spinner label="Loading..." />}
+              loadingContent={<CircularProgress label="Loading..." />}
             >
               {(item) => (
                 <TableRow key={item.key}>
@@ -259,9 +259,6 @@ return (
           开发中... 
         </Tab>
       </Tabs>
-
-      {isLoading && <CircularProgress label="Loading..." />} {/* 加载状态 */}
-
     </div>
   )
 }
