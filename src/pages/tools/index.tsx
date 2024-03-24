@@ -65,7 +65,7 @@ export default function Tool() {
 
 const [selectedKeys, setSelectedKeys]:SelectedKey= React.useState(new Set([""]));
 const {isOpen, onOpen, onClose} = useDisclosure();
-const [size, setSize] = React.useState('3xl')
+const [size, setSize] = React.useState<'3xl' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full' | 'xs' | '4xl' | '5xl'>('3xl');
 //地址数组
 const [address,setAddress] =useState([])
 
