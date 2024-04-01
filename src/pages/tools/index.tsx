@@ -132,7 +132,7 @@ const fetchData = async () => {
           res.result.forEach((tx: any) => {
             const [year, month, day] = timemath(tx.origin.timestamp);
             yearArray.push(year);
-            monthArray.push(month);
+            monthArray.push(`${year}-${month}`);
             dayArray.push(`${month}-${day}`);
           });
           const uniqueYears = [...new Set(yearArray)];
@@ -218,6 +218,7 @@ return (
           {/* 数据操作 */}
           <div className="flex flex-wrap gap-3">
             <Button isLoading={isLoading} color='primary' key={size} onPress={()=>{handleOpen()}}>添加地址</Button>
+            <Button isLoading={isLoading} color='primary' key={size} onPress={()=>{}} isDisabled>选择删除</Button>
           </div>
           <Modal 
             size={size} 
