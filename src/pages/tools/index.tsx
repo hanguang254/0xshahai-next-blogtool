@@ -196,19 +196,33 @@ const handleSearch = async() =>{
 
 
 const handledelete = async () => {
-  try{
-      setIsLoading(true)
-      // 过滤出未选中的行
-      const updatedRows = rows.filter((row: any) => !selectedKeys.has(row.key));
-      console.log(updatedRows); // 输出更新后的行数组
-      // 更新 rows 状态
-      setRows(updatedRows);
-      // 将更新后的数据保存到本地存储
-      localStorage.setItem('Rows', JSON.stringify(updatedRows));
-      setIsLoading(false)
+  try {
+    setIsLoading(true); // 设置加载状态为 true
     
-  }catch(err){
-    console.log("错误：",err);
+    // 如果 selectedKeys 是字符串 "all"，则清空 rows 数组
+    if (typeof selectedKeys === 'string' && selectedKeys === 'all') {
+      console.log('选择了全部行数');
+      setRows([]); // 清空 rows 数组
+      localStorage.removeItem('Rows'); // 移除本地存储中的数据
+      setIsDisabled(true); // 将按钮禁用状态设置为 true
+      return;
+    }
+
+    // 过滤出未选中的行
+    const updatedRows = rows.filter((row: any) => !selectedKeys.has(row.key));
+    console.log(updatedRows); // 输出更新后的行数组
+    
+    // 更新 rows 状态
+    setRows(updatedRows);
+    
+    // 将更新后的数据保存到本地存储
+    localStorage.setItem('Rows', JSON.stringify(updatedRows));
+  } catch (err) {
+    console.log("错误：", err);
+  } finally {
+    setSelectedKeys(new Set())
+    setIsLoading(false); // 设置加载状态为 false
+    setIsDisabled(false)
   }
 };
 
@@ -243,7 +257,7 @@ return (
           {/* 数据操作 */}
           <div className="flex flex-wrap gap-3">
             <Button isLoading={isLoading} color='primary' key={size} onPress={()=>{handleOpen()}}>添加地址</Button>
-            <Button isLoading={isLoading} color='primary' onPress={()=>{handledelete()}} isDisabled={selectedKeys.size === 0}>选择删除</Button>
+            <Button isLoading={isLoading} color='primary' onPress={()=>{handledelete()}} isDisabled={isDisabled || selectedKeys.size === 0}>选择删除</Button>
           </div>
           <Modal 
             size={size} 
