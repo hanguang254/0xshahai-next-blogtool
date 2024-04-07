@@ -5,6 +5,7 @@ import {Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, getKeyV
 import {Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, useDisclosure} from "@nextui-org/react";
 import {Textarea,CircularProgress,Spinner} from "@nextui-org/react";
 import { ethers } from "ethers";
+import { v4 as uuidv4 } from 'uuid';
 
 type SelectedKey=[selectedKeys:any, setSelectedKeys:any]
 
@@ -63,7 +64,7 @@ export default function Tool() {
       }
     ];
 
-const [selectedKeys, setSelectedKeys]:SelectedKey= React.useState(new Set([""]));
+const [selectedKeys, setSelectedKeys]:SelectedKey= React.useState(new Set([]));
 const {isOpen, onOpen, onClose} = useDisclosure();
 const [size, setSize] = React.useState<'3xl' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full' | 'xs' | '4xl' | '5xl'>('3xl');
 //地址数组
@@ -72,6 +73,8 @@ const [address,setAddress] =useState([])
 const [rows, setRows] = useState([]);
 
 const [isLoading, setIsLoading] = useState(false); // 加载状态
+
+const [isDisabled,setIsDisabled] = useState(false);
 
 
 //打开模态框
@@ -148,6 +151,8 @@ const fetchData = async () => {
       }));
 
       setRows(parsedRows);
+      console.log("数据以缓存到本地",parsedRows); 
+      
       localStorage.setItem('Rows', JSON.stringify(parsedRows));
     } else {
       console.log('本地缓存中没有对应的数据');
@@ -165,10 +170,11 @@ const handleSearch = async() =>{
       const res = await APISearch(addressItem);
       if (res.result && res.result.length > 0) {
         const message = res.result[0]; // 假设只取返回结果的第一个消息对象
-        console.log(message);
+        // console.log(message);
+        // console.log(uuidv4().slice(0,10));
         
         return {
-          key: message.id, // 使用消息的 id 作为行的 key
+          key: uuidv4().slice(0,15), // 使用随机uid  id 作为行的 key
           count: res.result.length || 0, // 假设 numPayments 表示跨链次数
           ETHgas: Number(ethers.formatEther(message.totalPayment))*res.result.length || 0,
           address: addressItem,
@@ -186,6 +192,25 @@ const handleSearch = async() =>{
     // 立即执行 useEffect
     fetchData();
 }
+
+
+
+const handledelete = async () => {
+  try{
+      setIsLoading(true)
+      // 过滤出未选中的行
+      const updatedRows = rows.filter((row: any) => !selectedKeys.has(row.key));
+      console.log(updatedRows); // 输出更新后的行数组
+      // 更新 rows 状态
+      setRows(updatedRows);
+      // 将更新后的数据保存到本地存储
+      localStorage.setItem('Rows', JSON.stringify(updatedRows));
+      setIsLoading(false)
+    
+  }catch(err){
+    console.log("错误：",err);
+  }
+};
 
 return (
     <div className={styles.main}>
@@ -218,7 +243,7 @@ return (
           {/* 数据操作 */}
           <div className="flex flex-wrap gap-3">
             <Button isLoading={isLoading} color='primary' key={size} onPress={()=>{handleOpen()}}>添加地址</Button>
-            <Button isLoading={isLoading} color='primary' key={size} onPress={()=>{}} isDisabled>选择删除</Button>
+            <Button isLoading={isLoading} color='primary' onPress={()=>{handledelete()}} isDisabled={selectedKeys.size === 0}>选择删除</Button>
           </div>
           <Modal 
             size={size} 
