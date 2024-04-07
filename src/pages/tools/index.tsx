@@ -255,7 +255,7 @@ return (
             </TableBody>
           </Table>
           {/* 数据操作 */}
-          <div className="flex flex-wrap gap-3">
+          <div className={styles.useButton}>
             <Button isLoading={isLoading} color='primary' key={size} onPress={()=>{handleOpen()}}>添加地址</Button>
             <Button isLoading={isLoading} color='primary' onPress={()=>{handledelete()}} isDisabled={isDisabled || selectedKeys.size === 0}>选择删除</Button>
           </div>
