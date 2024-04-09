@@ -123,7 +123,6 @@ useEffect(() => {
 const fetchData = async () => {
   setIsLoading(true);
   try {
-    handleSearch()
     const cachedRows = localStorage.getItem('Rows');
     if (cachedRows) {
       const parsedRows = JSON.parse(cachedRows);
