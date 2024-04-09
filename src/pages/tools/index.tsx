@@ -164,34 +164,35 @@ const fetchData = async () => {
   }
 };
 
-const handleSearch = async() =>{
-    setIsLoading(true); // 设置加载状态为 true
-    const newRows:any = await Promise.all(address.map(async (addressItem) => {
+const handleSearch = async () => {
+  setIsLoading(true); // 设置加载状态为 true
+  const newRows: any = await Promise.all(
+    address.map(async (addressItem) => {
       const res = await APISearch(addressItem);
       if (res.result && res.result.length > 0) {
-        const message = res.result[0]; // 假设只取返回结果的第一个消息对象
-        // console.log(message);
-        // console.log(uuidv4().slice(0,10));
-        
+        const message = res.result[0];
         return {
-          key: uuidv4().slice(0,15), // 使用随机uid  id 作为行的 key
-          count: res.result.length || 0, // 假设 numPayments 表示跨链次数
-          ETHgas: Number(ethers.formatEther(message.totalPayment))*res.result.length || 0,
+          key: uuidv4().slice(0, 15),
+          count: res.result.length || 0,
+          ETHgas: Number(ethers.formatEther(message.totalPayment)) * res.result.length || 0,
           address: addressItem,
         };
       }
       return null;
-    }));
-    // 使用函数式更新，将新数据追加到现有数据之后
-    setRows(prevRows => [...prevRows, ...newRows.filter(row => row !== null)]);
+    })
+  );
 
-    setIsLoading(false);
-    // 将新数据保存到本地存储
-    localStorage.setItem('Rows', JSON.stringify([...rows, ...newRows.filter(row => row !== null)]));
+  // 使用函数式更新，将新数据追加到现有数据之后
+  setRows((prevRows) => [...prevRows, ...newRows.filter((row) => row !== null)]);
 
-    // 立即执行 useEffect
-    fetchData();
-}
+  setIsLoading(false);
+
+  // 将新数据保存到本地存储
+  localStorage.setItem('Rows', JSON.stringify([...rows, ...newRows.filter((row) => row !== null)]));
+
+  // 立即执行 useEffect
+  fetchData();
+};
 
 
 
