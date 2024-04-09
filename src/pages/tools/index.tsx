@@ -116,13 +116,14 @@ const timemath =(timestamp:any)=>{
 }
 
 useEffect(() => {
-  handleSearch();
+  fetchData();
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 
 const fetchData = async () => {
   setIsLoading(true);
   try {
+    handleSearch()
     const cachedRows = localStorage.getItem('Rows');
     if (cachedRows) {
       const parsedRows = JSON.parse(cachedRows);
