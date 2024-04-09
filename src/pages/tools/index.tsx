@@ -145,6 +145,7 @@ const fetchData = async () => {
           value.years = uniqueYears.length;
           value.month = uniqueMonths.length;
           value.day = uniqueDays.length;
+          value.count = res.result.length;
         } catch (error) {
           console.error('获取地址信息时出错：', error);
         }
