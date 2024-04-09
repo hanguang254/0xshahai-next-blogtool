@@ -124,9 +124,10 @@ const fetchData = async () => {
   setIsLoading(true);
   try {
     const cachedRows = localStorage.getItem('Rows');
+    let updatedRows = [];
     if (cachedRows) {
       const parsedRows = JSON.parse(cachedRows);
-      await Promise.all(parsedRows.map(async (value: any) => {
+      for (const value of parsedRows) {
         try {
           const res = await APISearch(value.address);
           const yearArray: any = [];
@@ -142,20 +143,23 @@ const fetchData = async () => {
           const uniqueMonths = [...new Set(monthArray)];
           const uniqueDays = [...new Set(dayArray)];
 
-          value.years = uniqueYears.length;
-          value.month = uniqueMonths.length;
-          value.day = uniqueDays.length;
-          value.count = res.result.length;
-          value.ETHgas = Number(ethers.formatEther(res.result[0].totalPayment)) * res.result.length
+          const updatedValue = {
+            ...value,
+            years: uniqueYears.length,
+            month: uniqueMonths.length,
+            day: uniqueDays.length,
+            count: res.result.length,
+            ETHgas: Number(ethers.formatEther(res.result[0].totalPayment)) * res.result.length
+          };
+
+          updatedRows.push(updatedValue);
         } catch (error) {
           console.error('获取地址信息时出错：', error);
         }
-      }));
-
-      setRows(parsedRows);
-      console.log("数据以缓存到本地",parsedRows); 
-      
-      localStorage.setItem('Rows', JSON.stringify(parsedRows));
+      }
+      setRows(updatedRows);
+      console.log("数据以缓存到本地", updatedRows); 
+      localStorage.setItem('Rows', JSON.stringify(updatedRows));
     } else {
       console.log('本地缓存中没有对应的数据');
     }
