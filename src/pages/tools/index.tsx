@@ -146,6 +146,7 @@ const fetchData = async () => {
           value.month = uniqueMonths.length;
           value.day = uniqueDays.length;
           value.count = res.result.length;
+          value.ETHgas = Number(ethers.formatEther(res.result[0].totalPayment)) * res.result.length
         } catch (error) {
           console.error('获取地址信息时出错：', error);
         }
@@ -172,11 +173,28 @@ const handleSearch = async () => {
       const res = await APISearch(addressItem);
       if (res.result && res.result.length > 0) {
         const message = res.result[0];
+
+        const yearArray: any = [];
+          const monthArray: any = [];
+          const dayArray: any = [];
+          res.result.forEach((tx: any) => {
+            const [year, month, day] = timemath(tx.origin.timestamp);
+            yearArray.push(year);
+            monthArray.push(`${year}-${month}`);
+            dayArray.push(`${month}-${day}`);
+          });
+          const uniqueYears = [...new Set(yearArray)];
+          const uniqueMonths = [...new Set(monthArray)];
+          const uniqueDays = [...new Set(dayArray)];
+
         return {
           key: uuidv4().slice(0, 15),
           count: res.result.length || 0,
           ETHgas: Number(ethers.formatEther(message.totalPayment)) * res.result.length || 0,
           address: addressItem,
+          years : uniqueYears.length,
+          month : uniqueMonths.length,
+          day : uniqueDays.length,
         };
       }
       return null;
@@ -191,8 +209,8 @@ const handleSearch = async () => {
   // 将新数据保存到本地存储
   localStorage.setItem('Rows', JSON.stringify([...rows, ...newRows.filter((row) => row !== null)]));
 
-  // 立即执行 useEffect
-  fetchData();
+  // // 立即执行 useEffect
+  // fetchData();
 };
 
 
