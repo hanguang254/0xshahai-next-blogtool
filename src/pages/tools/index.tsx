@@ -75,6 +75,7 @@ const [rows, setRows] = useState([]);
 const [isLoading, setIsLoading] = useState(false); // 加载状态
 
 const [isDisabled,setIsDisabled] = useState(false);
+const [rowLoadingStates, setRowLoadingStates] = useState([]);
 
 
 //打开模态框
@@ -116,50 +117,41 @@ const timemath =(timestamp:any)=>{
 }
 
 useEffect(() => {
-  fetchData();
+  // fetchData();
+  const cachedRows = localStorage.getItem('Rows');
+  const parsedRows = JSON.parse(cachedRows);
+  setRows(parsedRows)
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 
+// 在数据获取过程中设置每行数据的加载状态
 const fetchData = async () => {
   setIsLoading(true);
   try {
     const cachedRows = localStorage.getItem('Rows');
-    let updatedRows = [];
     if (cachedRows) {
       const parsedRows = JSON.parse(cachedRows);
-      for (const value of parsedRows) {
+      // 将每行数据的加载状态初始化为 false
+      const updatedRows = parsedRows.map(row => ({ ...row, isLoading: false }));
+      setRows(updatedRows);
+
+      // 遍历每行数据，分别请求数据并更新对应的加载状态
+      await Promise.all(updatedRows.map(async (value: any) => {
         try {
+          // 在请求数据前将该行数据的 isLoading 设置为 true
+          setRows(prevRows => prevRows.map(row => row.key === value.key ? { ...row, isLoading: true } : row));
+
           const res = await APISearch(value.address);
-          const yearArray: any = [];
-          const monthArray: any = [];
-          const dayArray: any = [];
-          res.result.forEach((tx: any) => {
-            const [year, month, day] = timemath(tx.origin.timestamp);
-            yearArray.push(year);
-            monthArray.push(`${year}-${month}`);
-            dayArray.push(`${month}-${day}`);
-          });
-          const uniqueYears = [...new Set(yearArray)];
-          const uniqueMonths = [...new Set(monthArray)];
-          const uniqueDays = [...new Set(dayArray)];
+          // 数据请求成功后更新行数据，并将 isLoading 设置为 false
+          setRows(prevRows => prevRows.map(row => row.key === value.key ? { ...row, ...updateRowData(res), isLoading: false } : row));
 
-          const updatedValue = {
-            ...value,
-            years: uniqueYears.length,
-            month: uniqueMonths.length,
-            day: uniqueDays.length,
-            count: res.result.length,
-            ETHgas: Number(ethers.formatEther(res.result[0].totalPayment)) * res.result.length
-          };
-
-          updatedRows.push(updatedValue);
+          localStorage.setItem('Rows', JSON.stringify(updatedRows));
         } catch (error) {
           console.error('获取地址信息时出错：', error);
+          // 如果请求失败，将该行数据的 isLoading 设置为 false
+          setRows(prevRows => prevRows.map(row => row.key === value.key ? { ...row, isLoading: false } : row));
         }
-      }
-      setRows(updatedRows);
-      console.log("数据以缓存到本地", updatedRows); 
-      localStorage.setItem('Rows', JSON.stringify(updatedRows));
+      }));
     } else {
       console.log('本地缓存中没有对应的数据');
     }
@@ -167,7 +159,37 @@ const fetchData = async () => {
     console.error('解析本地缓存数据时出错：', error);
   } finally {
     setIsLoading(false);
+    setSelectedKeys(new Set())
   }
+};
+
+// 更新行数据的函数，用于处理 API 请求返回的数据
+const updateRowData = (res: any) => {
+  if (res.result && res.result.length > 0) {
+    const message = res.result[0];
+
+    const yearArray: any = [];
+    const monthArray: any = [];
+    const dayArray: any = [];
+    res.result.forEach((tx: any) => {
+      const [year, month, day] = timemath(tx.origin.timestamp);
+      yearArray.push(year);
+      monthArray.push(`${year}-${month}`);
+      dayArray.push(`${month}-${day}`);
+    });
+    const uniqueYears = [...new Set(yearArray)];
+    const uniqueMonths = [...new Set(monthArray)];
+    const uniqueDays = [...new Set(dayArray)];
+
+    return {
+      count: res.result.length || 0,
+      ETHgas: Number(ethers.formatEther(message.totalPayment)) * res.result.length || 0,
+      years: uniqueYears.length,
+      month: uniqueMonths.length,
+      day: uniqueDays.length,
+    };
+  }
+  return {};
 };
 
 const handleSearch = async () => {
@@ -206,12 +228,12 @@ const handleSearch = async () => {
   );
 
   // 使用函数式更新，将新数据追加到现有数据之后
-  setRows((prevRows) => [...prevRows, ...newRows.filter((row) => row !== null)]);
+  setRows((prevRows) => [...prevRows, ...newRows.filter((row: null) => row !== null)]);
 
   setIsLoading(false);
 
   // 将新数据保存到本地存储
-  localStorage.setItem('Rows', JSON.stringify([...rows, ...newRows.filter((row) => row !== null)]));
+  localStorage.setItem('Rows', JSON.stringify([...rows, ...newRows.filter((row: null) => row !== null)]));
 
   // // 立即执行 useEffect
   // fetchData();
@@ -269,19 +291,59 @@ return (
             <TableBody 
               items={rows} 
               isLoading={isLoading}
-              loadingContent={<CircularProgress label="Loading..." />}
             >
+              {/* {rows.map((item: any) => (
+                <TableRow key={item.key}>
+                  {(columnKey) => (
+                    <TableCell width={1000}>
+                     {(columnKey === "address" || isLoading) ? (
+                        columnKey === "address" ? getKeyValue(item, columnKey) : <Spinner color="secondary" />
+                      ) : (
+                        getKeyValue(item, columnKey)
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))} */}
+              {rows.map((item: any) => (
+                <TableRow key={item.key}>
+                  {(columnKey) => (
+                    <TableCell width={1000}>
+                      {/* 根据 isLoading 属性决定是否显示加载状态 */}
+                      {item.isLoading ? (
+                        columnKey === "address" ? getKeyValue(item, columnKey) : <Spinner color="secondary" />
+                      ) : (
+                        getKeyValue(item, columnKey)
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+            {/* <TableBody 
+              items={rows} 
+              isLoading={isLoading}
+              // loadingContent={<CircularProgress label="Loading..." />}
+            >
+              
               {(item) => (
                 <TableRow key={item.key}>
                   {(columnKey) => <TableCell width={1000}>{getKeyValue(item, columnKey)}</TableCell>}
                 </TableRow>
               )}
-            </TableBody>
+            </TableBody> */}
           </Table>
           {/* 数据操作 */}
           <div className={styles.useButton}>
             <Button isLoading={isLoading} color='primary' key={size} onPress={()=>{handleOpen()}}>添加地址</Button>
-            <Button isLoading={isLoading} color='primary' onPress={()=>{handledelete()}} isDisabled={isDisabled || selectedKeys.size === 0}>选择删除</Button>
+            <Button isLoading={isLoading} color='primary' 
+              onPress={()=>{fetchData()}} 
+              isDisabled={isDisabled || selectedKeys.size === 0}
+            >刷新全部</Button>
+            <Button isLoading={isLoading} color='primary' 
+              onPress={()=>{handledelete()}} 
+              isDisabled={isDisabled || selectedKeys.size === 0}
+            >选择删除</Button>
           </div>
           <Modal 
             size={size} 
