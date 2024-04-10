@@ -1,0 +1,25 @@
+.content{
+    height: 400px;
+    width: 400px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.HyperlaneTab{
+    /* padding-left: 30px;
+    padding-right: 30px; */
+    width: 100%;
+}
+
+.useButton{
+    margin-top: 10px;
+    display:flex;
+    justify-content: center;
+}
+
+.useButton > button {
+    margin-right: 40px; /* 添加按钮之间的右边距 */
+  }
