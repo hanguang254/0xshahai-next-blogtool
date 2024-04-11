@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import styles from './index.module.css'
 import {Tabs, Tab} from "@nextui-org/react";
 import Hyperlane from '@/components/hyperlane/hyperlane';
