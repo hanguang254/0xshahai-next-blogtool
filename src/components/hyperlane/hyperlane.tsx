@@ -274,7 +274,7 @@ export default function Hyperlane() {
   };
 
   return (
-    <>
+    <div>
       <Table 
             aria-label="Controlled table example with dynamic content"
             selectionMode="multiple"
@@ -373,6 +373,6 @@ export default function Hyperlane() {
               )}
             </ModalContent>
           </Modal>
-    </>
+    </div>
   )
 }
