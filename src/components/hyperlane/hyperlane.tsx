@@ -120,8 +120,11 @@ const timemath =(timestamp:any)=>{
 useEffect(() => {
   // fetchData();
   const cachedRows = localStorage.getItem('Rows');
-  const parsedRows = JSON.parse(cachedRows);
-  setRows(parsedRows)
+  if(cachedRows){
+    const parsedRows = JSON.parse(cachedRows);
+    setRows(parsedRows)
+  }
+  
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 
@@ -229,12 +232,12 @@ const handleSearch = async () => {
   );
 
   // 使用函数式更新，将新数据追加到现有数据之后
-  setRows(() => [ ...newRows.filter((row: null) => row !== null)]);
+  setRows((prevRows) => [ ...prevRows,...newRows.filter((row: null) => row !== null)]);
 
   setIsLoading(false);
 
   // 将新数据保存到本地存储
-  localStorage.setItem('Rows', JSON.stringify([ ...newRows.filter((row: null) => row !== null)]));
+  localStorage.setItem('Rows', JSON.stringify([...rows, ...newRows.filter((row: null) => row !== null)]));
 
   // // 立即执行 useEffect
   // fetchData();
