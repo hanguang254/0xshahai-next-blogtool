@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import {Navbar, NavbarBrand, NavbarContent, NavbarItem, Link, Button, NavbarMenuItem, NavbarMenu, NavbarMenuToggle} from "@nextui-org/react";
 import {AcmeLogo} from "./AcmeLogo.jsx";
 import { useRouter } from "next/router.js";
+import styles from './index.module.css'
 
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
@@ -32,7 +33,7 @@ export default function App() {
   }, [router]);
 
   return (
-    <Navbar onMenuOpenChange={setIsMenuOpen}>
+    <Navbar onMenuOpenChange={setIsMenuOpen} className={styles.Navbar}>
       <NavbarContent>
         <NavbarMenuToggle
           aria-label={isMenuOpen ? "Close menu" : "Open menu"}
