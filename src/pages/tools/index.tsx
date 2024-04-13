@@ -10,7 +10,7 @@ return (
       {/* <div className={styles.content}>
         正在开发......
       </div> */}
-      <Tabs aria-label="Options" size='lg' fullWidth={true} radius='full'>
+      <Tabs aria-label="Options" size='lg' fullWidth={true} radius='full' className={styles.Tabsmain}>
         <Tab key="hyperlane" title="Hyperlane查询" className={styles.HyperlaneTab}>
           <Hyperlane />
         </Tab>

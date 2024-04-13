@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import styles from './index.module.css'
 import {Tabs, Tab, Card, CardBody, Snippet} from "@nextui-org/react";
 import {Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, getKeyValue} from "@nextui-org/react";
-import {Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, useDisclosure} from "@nextui-org/react";
+import {Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, useDisclosure,ScrollShadow} from "@nextui-org/react";
 import {Textarea,CircularProgress,Spinner} from "@nextui-org/react";
 import { ethers } from "ethers";
 import { v4 as uuidv4 } from 'uuid';
@@ -278,16 +278,21 @@ const handledelete = async () => {
 
 
   return (
-    <div>
+    <div className={styles.Hyperlanemain}>
       <Table 
             aria-label="Controlled table example with dynamic content"
             selectionMode="multiple"
             selectedKeys={selectedKeys}
             onSelectionChange={setSelectedKeys}
+            classNames={{
+              base: "max-h-[800px] overflow-scroll",
+              // table: "min-h-[420px]",
+            }}
           >
             <TableHeader columns={columns}>
               {(column) => <TableColumn key={column.key}>{column.label}</TableColumn>}
             </TableHeader>
+            
             <TableBody 
               items={rows} 
               isLoading={isLoading}
@@ -305,20 +310,23 @@ const handledelete = async () => {
                   )}
                 </TableRow>
               ))} */}
-              {rows && rows.map((item: any) => (
-                <TableRow key={item.key}>
-                  {(columnKey) => (
-                    <TableCell width={1000}>
-                      {/* 根据 isLoading 属性决定是否显示加载状态 */}
-                      {item.isLoading ? (
-                        columnKey === "address" ? getKeyValue(item, columnKey) : <Spinner color="secondary" />
-                      ) : (
-                        getKeyValue(item, columnKey)
-                      )}
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
+              
+                {rows && rows.map((item: any) => (
+                  
+                  <TableRow key={item.key}>
+                    {(columnKey) => (
+                      <TableCell width={1000}>
+                        {/* 根据 isLoading 属性决定是否显示加载状态 */}
+                        {item.isLoading ? (
+                          columnKey === "address" ? getKeyValue(item, columnKey) : <Spinner color="secondary" />
+                        ) : (
+                          getKeyValue(item, columnKey)
+                        )}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              
             </TableBody>
             {/* <TableBody 
               items={rows} 
