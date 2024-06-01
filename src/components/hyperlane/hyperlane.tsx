@@ -7,6 +7,7 @@ import {Textarea,CircularProgress,Spinner} from "@nextui-org/react";
 import { ethers } from "ethers";
 import { v4 as uuidv4 } from 'uuid';
 
+
 type SelectedKey=[selectedKeys:any, setSelectedKeys:any]
 
 export default function Hyperlane() {
@@ -92,18 +93,26 @@ const handleinput=(value:any)=>{
   
 }
 
-const APISearch=async (address:string)=>{
-  const baseUrl = 'https://explorer.hyperlane.xyz/api';
+const APISearch = async (address: string) => {
+  const targetUrl = 'https://explorer.hyperlane.xyz/api';
   const action = 'module=message&action=search-messages';
-  // const address = '0x88A68278fE332846BACC78BB6c38310a357BEe06'; // 要查询的地址
-  const url = `${baseUrl}?${action}&query=${address}`;
+  const url = `${targetUrl}?${action}&query=${address}`;
+  
   const response = await fetch(url, {
+    mode:"cors",
     method: "GET",
-    headers: {"Content-Type": "application/json"},
+    headers: {
+      "Content-Type": "application/json",
+    },
   });
+
+  if (!response.ok) {
+    throw new Error('网络响应不正常');
+  }
+
   const data = await response.json();
-  return data
-}
+  return data;
+};
 
 // 时间戳换算
 
@@ -186,11 +195,11 @@ const updateRowData = (res: any) => {
     const uniqueDays = [...new Set(dayArray)];
 
     return {
-      count: res.result.length || 0,
-      ETHgas: Number(ethers.formatEther(message.totalPayment)) * res.result.length || 0,
-      years: uniqueYears.length,
-      month: uniqueMonths.length,
-      day: uniqueDays.length,
+      count: res.result.length || "error",
+      ETHgas: Number(ethers.formatEther(message.totalPayment)) * res.result.length || "error",
+      years: uniqueYears.length || "error",
+      month: uniqueMonths.length || "error",
+      day: uniqueDays.length || "error",
     };
   }
   return {};

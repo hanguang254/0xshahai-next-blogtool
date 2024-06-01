@@ -29,7 +29,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "src/components/navbar/AcmeLogo.jsx"
-  ],
+, "src/setupProxy.js"  ],
   "exclude": [
     "node_modules"
   ]
