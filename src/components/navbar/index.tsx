@@ -4,6 +4,10 @@ import {AcmeLogo} from "./AcmeLogo.jsx";
 import { useRouter } from "next/router.js";
 import styles from './index.module.css'
 
+
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+
+
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const router = useRouter(); // 获取路由信息
@@ -56,9 +60,9 @@ export default function App() {
       </NavbarContent>
       <NavbarContent justify="end">
         <NavbarItem>
-          <Button isDisabled as={Link} color="primary" href="#" variant="flat">
-            connect wallet
-          </Button>
+          {/* 链接按钮 */}
+          <ConnectButton label="ConnectWallet" />
+
         </NavbarItem>
       </NavbarContent>
 
