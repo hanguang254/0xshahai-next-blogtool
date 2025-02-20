@@ -61,7 +61,7 @@ export default function App() {
       <NavbarContent justify="end">
         <NavbarItem>
           {/* 链接按钮 */}
-          <ConnectButton label="ConnectWallet" />
+          <ConnectButton label="ConnectWallet" showBalance={false} />
 
         </NavbarItem>
       </NavbarContent>

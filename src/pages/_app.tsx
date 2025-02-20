@@ -25,12 +25,31 @@ import {
   QueryClient,
 } from "@tanstack/react-query";
 
+import { connectorsForWallets } from '@rainbow-me/rainbowkit';
+import {
+  rainbowWallet,
+  metaMaskWallet
+} from '@rainbow-me/rainbowkit/wallets';
 
-const config = getDefaultConfig({
-  appName: 'My RainbowKit App',
-  projectId: 'a6ad9782f7962541cf0a1de03ae8aa87',
+const connectors = connectorsForWallets([
+    {
+      groupName: 'Recommended',
+      wallets: [metaMaskWallet],
+    },
+  ],
+  {
+    appName: 'My RainbowKit App',
+    projectId: 'a6ad9782f7962541cf0a1de03ae8aa87',
+  }
+);
+
+
+const config = createConfig({
+  connectors,
   chains: [sepolia],
-  ssr: true, // If your dApp uses server side rendering (SSR)
+  transports: {
+    [sepolia.id]: http()
+  }
 });
 
 const queryClient = new QueryClient();
