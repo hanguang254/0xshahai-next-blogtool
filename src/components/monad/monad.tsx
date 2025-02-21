@@ -154,6 +154,7 @@ export default function Monad() {
             isOpen={isOpen} 
             onOpenChange={onOpenChange}
             isDismissable={false}
+            placement="center"
         >
             <ModalContent>
                 {(onClose) => (
