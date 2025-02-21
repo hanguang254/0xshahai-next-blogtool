@@ -1,6 +1,6 @@
 import React from 'react'
 import styles from './index.module.css'
-import {Tabs, Tab} from "@nextui-org/react";
+import {Tabs, Tab} from "@heroui/react";
 import Hyperlane from '@/components/hyperlane/hyperlane';
 
 

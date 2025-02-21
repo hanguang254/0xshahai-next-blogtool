@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import styles from './index.module.css'
-import {Card, CardHeader, CardBody, CardFooter, Avatar, Button} from "@nextui-org/react";
+import {Card, CardHeader, CardBody, CardFooter, Avatar, Button} from "@heroui/react";
 import Image from 'next/image';
 
 

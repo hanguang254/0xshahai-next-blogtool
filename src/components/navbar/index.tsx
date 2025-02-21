@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import {Navbar, NavbarBrand, NavbarContent, NavbarItem, Link, Button, NavbarMenuItem, NavbarMenu, NavbarMenuToggle} from "@nextui-org/react";
+import {Navbar, NavbarBrand, NavbarContent, NavbarItem, Link, Button, NavbarMenuItem, NavbarMenu, NavbarMenuToggle} from "@heroui/react";
 import {AcmeLogo} from "./AcmeLogo.jsx";
 import { useRouter } from "next/router.js";
 import styles from './index.module.css'

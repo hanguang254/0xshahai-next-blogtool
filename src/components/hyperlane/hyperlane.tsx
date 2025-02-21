@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import styles from './index.module.css'
-import {Tabs, Tab, Card, CardBody, Snippet} from "@nextui-org/react";
-import {Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, getKeyValue} from "@nextui-org/react";
-import {Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, useDisclosure,ScrollShadow} from "@nextui-org/react";
-import {Textarea,CircularProgress,Spinner} from "@nextui-org/react";
+import {Tabs, Tab, Card, CardBody, Snippet} from "@heroui/react";
+import {Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, getKeyValue} from "@heroui/react";
+import {Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, useDisclosure,ScrollShadow} from "@heroui/react";
+import {Textarea,CircularProgress,Spinner} from "@heroui/react";
 import { ethers } from "ethers";
 import { v4 as uuidv4 } from 'uuid';
 

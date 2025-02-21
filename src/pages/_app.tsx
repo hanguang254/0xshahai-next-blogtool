@@ -1,6 +1,6 @@
 import "@/styles/globals.css";
 import type { AppProps } from "next/app";
-import {NextUIProvider} from "@nextui-org/react";
+import {HeroUIProvider} from "@heroui/react";
 import Layout from "@/components/layout/index"
 import Head from "next/head";
 
@@ -56,7 +56,7 @@ const queryClient = new QueryClient();
 
 export default function App({ Component, pageProps }: AppProps) {
   return (
-    <NextUIProvider>
+    <HeroUIProvider>
       <WagmiProvider config={config}>
         <QueryClientProvider client={queryClient}>
           <RainbowKitProvider 
@@ -80,6 +80,6 @@ export default function App({ Component, pageProps }: AppProps) {
           </RainbowKitProvider>
         </QueryClientProvider>
       </WagmiProvider>
-    </NextUIProvider>
+    </HeroUIProvider>
   );
 }
