@@ -8,37 +8,92 @@ import {
     Button,
     useDisclosure,
     useDraggable,
-    Input
-  } from "@heroui/react";
+    Input,
+    Textarea
+} from "@heroui/react";
 
 import {Card, CardBody, CardFooter, Image} from "@heroui/react";
 import styles from "./index.module.css"
 
 // 为不同的模态框创建不同的内容组件
 const Monad1Content = ({ onClose ,...moveProps}) => {
+    // 地址输入值获取
     const [inputValue, setInputValue] = React.useState("");
-    
+    //地址列表
+    const [addresslist, setAddressList] = React.useState([]);
+    // 判断有效
+    const [isValid, setIsValid] = React.useState(true);
+    const [errorMessage, setErrorMessage] = React.useState("");
+
+    //获取输入的地址数组
+    const handleAction = () => {
+        const addresses = inputValue.split('\n').filter(addr => addr.trim());
+        setAddressList(addresses);
+        console.log("处理的地址列表:", addresses);
+        // 这里添加你的处理逻辑
+    };
+
+    //验证地址是否正确
+    const validateAddresses = (value: string) => {
+        const addresses = value.split('\n');
+        for (const address of addresses) {
+            if (address.trim() && !address.match(/^0x[0-9a-fA-F]{40}$/)) {
+                setIsValid(false);
+                setErrorMessage("无效的以太坊地址");
+                return false;
+            }
+        }
+        setIsValid(true);
+        setErrorMessage("");
+        return true;
+    };
+
+    const handleInputChange = (e) => {
+        const newValue = e.target.value;
+        setInputValue(newValue);
+        validateAddresses(newValue);
+    };
+
     return (
         <>
             <ModalHeader {...moveProps} className="flex flex-col gap-1">
-                Monad 1 Details
+                MON合约分发工具
             </ModalHeader>
             <ModalBody>
-                <Input
-                    label="输入金额"
-                    placeholder="请输入数值"
+                <Textarea
+                    disableAnimation
+                    // disableAutosize
+                    classNames={{
+                        base: "w-full",
+                        input: "resize-y min-h-[80px]",
+                    }}
+                    label="地址栏"
+                    placeholder="一行一个地址，由于monad机制gas给多少就用多少"
+                    variant="bordered"
+                    minRows={8}
+                    size='lg'
+                    className="w-full"
                     value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
+                    onChange={handleInputChange}
+                    isInvalid={!isValid}
+                    errorMessage={errorMessage}
+                    color={isValid ? "default" : "danger"}
+                    isRequired={true}
                 />
+                <div>存款转账盒子</div>
             </ModalBody>
             <ModalFooter>
                 <Button color="danger" variant="light" onPress={onClose}>
-                  Close
+                    Close
                 </Button>
-                <Button color="primary" onPress={onClose}>
-                  Action
+                <Button 
+                    color="primary" 
+                    onPress={handleAction}
+                    isDisabled={!isValid || !inputValue.trim()}
+                >
+                    Action
                 </Button>
-              </ModalFooter>
+            </ModalFooter>
         </>
     );
 };
@@ -155,6 +210,7 @@ export default function Monad() {
             onOpenChange={onOpenChange}
             isDismissable={false}
             placement="center"
+            size='3xl'
         >
             <ModalContent>
                 {(onClose) => (
