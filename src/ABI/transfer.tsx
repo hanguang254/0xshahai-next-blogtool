@@ -1,4 +1,4 @@
-[
+export const monad_abi = [
 	{
 		"anonymous": false,
 		"inputs": [

@@ -10,6 +10,7 @@ import {
   getDefaultConfig,
   RainbowKitProvider,
   darkTheme,
+  Chain
 } from '@rainbow-me/rainbowkit';
 import { createConfig, http, WagmiProvider } from 'wagmi';
 import {
@@ -43,12 +44,27 @@ const connectors = connectorsForWallets([
   }
 );
 
+const monad_test = {
+  id: 10143,
+  name: 'Monadtest',
+  iconUrl: 'https://imagedelivery.net/cBNDGgkrsEA-b_ixIp9SkQ/MON.png/public',
+  iconBackground: '#fff',
+  nativeCurrency: { name: 'monad', symbol: 'MON', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://testnet-rpc.monad.xyz'] },
+  },
+  blockExplorers: {
+    default: { name: 'monadtest', url: 'https://testnet.monadexplorer.com/' },
+  }
+} as const satisfies Chain;
+
 
 const config = createConfig({
   connectors,
-  chains: [sepolia],
+  chains: [sepolia, monad_test],
   transports: {
-    [sepolia.id]: http()
+    [sepolia.id]: http(),
+    [monad_test.id]: http()
   }
 });
 
@@ -64,7 +80,7 @@ export default function App({ Component, pageProps }: AppProps) {
               accentColor:'linear-gradient(270deg, rgb(51, 212, 250) 0%, rgb(23, 243, 221) 100%)',
               accentColorForeground:'black'
             })}
-            initialChain={sepolia}
+            initialChain={monad_test}
             >
 
             {/* APP页面主题 */}

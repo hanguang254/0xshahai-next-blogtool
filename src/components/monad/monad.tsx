@@ -8,9 +8,10 @@ import {
     Button,
     useDisclosure,
     useDraggable,
-    Input,
     Textarea
 } from "@heroui/react";
+
+import {Input} from "@heroui/input";
 
 import {Card, CardBody, CardFooter, Image} from "@heroui/react";
 import styles from "./index.module.css"
@@ -63,12 +64,13 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
                 <Textarea
                     disableAnimation
                     // disableAutosize
+                    // onClear={() => console.log("textarea cleared")}
                     classNames={{
                         base: "w-full",
                         input: "resize-y min-h-[80px]",
                     }}
                     label="地址栏"
-                    placeholder="一行一个地址，由于monad机制gas给多少就用多少"
+                    placeholder="一行一个地址，建议每次分发50个地址"
                     variant="bordered"
                     minRows={8}
                     size='lg'
@@ -80,11 +82,27 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
                     color={isValid ? "default" : "danger"}
                     isRequired={true}
                 />
-                <div>存款转账盒子</div>
+                <div>
+                    <Input
+                        
+                        isRequired
+                        label="分发数量"
+                        labelPlacement="outside"
+                        placeholder="0.00"
+                        startContent={
+                            <div className="pointer-events-none flex items-center">
+                                <span className="text-default-400 text-small">$</span>
+                            </div>
+                        }
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                    />
+                </div>
             </ModalBody>
-            <ModalFooter>
-                <Button color="danger" variant="light" onPress={onClose}>
-                    Close
+            <ModalFooter className={styles.buttonContainer}>
+                <Button color="primary"  onPress={onClose}>
+                    存款
                 </Button>
                 <Button 
                     color="primary" 
@@ -150,8 +168,7 @@ export default function Monad() {
     const list = [
         {
             title: "合约分发水工具",
-            img: "/images/fruit-1.jpeg",
-            // price: "$5.50",
+            img: "https://imagedelivery.net/cBNDGgkrsEA-b_ixIp9SkQ/MON.png/public",
             content: Monad1Content
         },
         {

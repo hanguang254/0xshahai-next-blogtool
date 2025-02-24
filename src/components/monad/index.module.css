@@ -9,8 +9,12 @@
 } */
 
 
-.MonadTab{
-    /* padding-left: 30px;
-    padding-right: 30px; */
+/* .MonadTab{
     width: 100%;
+} */
+
+.buttonContainer {
+    display: flex;
+    justify-content: center;
+    gap: 40px; /* Optional: Adds space between the buttons */
 }
