@@ -160,7 +160,7 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
                         color={isAmountValid ? "default" : "danger"}
                     />
                 </div>
-                <div className="my-1" />
+                <div className="my-0" />
                 <div>
                     <Input
                         
