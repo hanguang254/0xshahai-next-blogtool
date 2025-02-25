@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import {
     Modal,
     ModalContent,
@@ -9,14 +9,28 @@ import {
     useDisclosure,
     useDraggable,
     Textarea,
-    Form
+    Form,
+    Alert
 } from "@heroui/react";
 
 import {Input} from "@heroui/input";
 
 import {Card, CardBody, CardFooter, Image} from "@heroui/react";
 import styles from "./index.module.css"
+import { monad_abi } from "../../ABI/transfer"
+
+import { useWriteContract, useAccount, useWaitForTransactionReceipt } from 'wagmi'
+import { mainnet, polygon,monadTestnet } from 'wagmi/chains'
+
+import {ethers }from 'ethers'
+
+import type { NotificationArgsProps } from 'antd';
+import { notification } from 'antd';
 import { log } from 'console';
+import axios from 'axios';
+import { SmileOutlined } from '@ant-design/icons';
+
+
 
 // 为不同的模态框创建不同的内容组件
 const Monad1Content = ({ onClose ,...moveProps}) => {
@@ -40,6 +54,35 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
 
     // 分发金额状态
     const [submitted, setSubmitted] = React.useState(null);
+
+    // wgami
+    const { data: hash,isPending, writeContract,error } = useWriteContract()
+    const account = useAccount()
+    const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ 
+      hash, 
+    }) 
+
+    // 提示框状态
+
+    //查询交易
+    
+
+    //
+    useEffect(() => {
+        
+        if(isConfirmed){
+            notification.open(
+                {
+                    message: '转账通知',
+                    description: `存款成功`,
+                    icon: <SmileOutlined style={{ color: '#108ee9' }} />,
+                    duration: 3,
+                    // style: { backgroundColor: 'black' },
+                }
+            );
+        }
+        
+    }, [isConfirmed]);
 
     // 分发金额
     const onSubmit = (e) => {
@@ -101,13 +144,20 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
         console.log(amount);
         
         if (!amount.trim()) {
-            setIsAmountValid(false)
             setIsAmountValid(false);
             setAmountErrorMessage('金额不能为空！');
         } else {
             setAmountErrorMessage('');
             setIsAmountValid(true);
-            setIsAmountValid(true)
+            writeContract({
+                address: '0xeaF3c3489167B5bC73154Ae95b762Dc609d815Fe',
+                abi: monad_abi,
+                functionName: 'deposit',
+                args: [], // 如果 deposit 函数没有输入参数，保持为空
+                value: ethers.parseEther(amount), // 转换为 wei
+                chain: monadTestnet,
+                account: account.address,
+            });
         }
     };
 
@@ -188,6 +238,7 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
                 <Button color="primary" 
                     onPress={handleDeposit}
                     isDisabled={!isAmountValid || !amount.trim()}
+                    isLoading={isPending}
                  >
                     存款
                 </Button>
@@ -260,18 +311,18 @@ export default function Monad() {
             img: "https://imagedelivery.net/cBNDGgkrsEA-b_ixIp9SkQ/MON.png/public",
             content: Monad1Content
         },
-        {
-            title: "Monad 2",
-            img: "/images/fruit-1.jpeg",
-            // price: "$5.50",
-            content: Monad2Content
-        },
-        {
-            title: "Monad 3",
-            img: "/images/fruit-1.jpeg",
-            // price: "$5.50",
-            content: Monad3Content
-        },
+        // {
+        //     title: "Monad 2",
+        //     img: "/images/fruit-1.jpeg",
+        //     // price: "$5.50",
+        //     content: Monad2Content
+        // },
+        // {
+        //     title: "Monad 3",
+        //     img: "/images/fruit-1.jpeg",
+        //     // price: "$5.50",
+        //     content: Monad3Content
+        // },
     ];
 
     const [selectedItem, setSelectedItem] = React.useState(null);
@@ -284,7 +335,6 @@ export default function Monad() {
     return (
         <>
         {/* <Button onPress={onOpen}>分发水</Button> */}
-        
         <div className="gap-2 grid grid-cols-2 sm:grid-cols-4" >
             {list.map((item, index) => (
                 /* eslint-disable no-console */
