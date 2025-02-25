@@ -22,7 +22,7 @@ import { monad_abi } from "../../ABI/transfer"
 import { useWriteContract, useAccount, useWaitForTransactionReceipt } from 'wagmi'
 import { mainnet, polygon,monadTestnet } from 'wagmi/chains'
 
-import {ethers }from 'ethers'
+import {Contract, ethers }from 'ethers'
 import {
     useConnectModal,
   } from '@rainbow-me/rainbowkit';
@@ -90,7 +90,7 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
 
 
     //获取输入的地址数组
-    const handleAction = () => {
+    const handleAction = (inputValue:any) => {
         const addresses = inputValue.split('\n').filter(addr => addr.trim());
         setAddressList(addresses);
         console.log("处理的地址列表:", addresses);
@@ -144,20 +144,21 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
             }
         }
     
-        // 打印转换后的数组
-        console.log("转换后的数组:", valueArray);
-        const amountToCopy = valueArray[0];  // 假设 valueArray 中只有一个金额
+        // 将金额转化为wei
+        const amountToCopy = ethers.parseEther(valueArray[0]);  // 假设 valueArray 中只有一个金额
+    
         const numberOfAddresses = addresslist.length;
-
+        console.log("转换后的金额（wei）:", amountToCopy.toString());
+        
         // 如果地址列表为空或金额为空，直接返回
         if (!amountToCopy || numberOfAddresses === 0) {
             console.error("无效的金额或地址列表为空！");
             return;
         }
-
+    
         // 复制金额，直到与地址列表长度一致
-        const repeatedAmounts = new Array(numberOfAddresses).fill(amountToCopy);
-
+        const repeatedAmounts = new Array(numberOfAddresses).fill(amountToCopy) // 将每个元素转换为数字
+    
         console.log("重复后的金额数组:", repeatedAmounts);
     
         setSendList(repeatedAmounts);
@@ -187,8 +188,8 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
     };
 
     //分发交易
-    const sendTransion=( )=>{
-        handleAction()
+    const sendTransion=async ( )=>{
+        console.log(addresslist,sendlist);
         writeContract({
             address: '0xeaF3c3489167B5bC73154Ae95b762Dc609d815Fe',
             abi: monad_abi,
@@ -226,6 +227,7 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
                     errorMessage={errorMessage}
                     color={isValid ? "default" : "danger"}
                     isRequired={true}
+                    onBlur={() => handleAction(inputValue)}
                 />
                 <div>
                     <Input
