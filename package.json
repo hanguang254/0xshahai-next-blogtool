@@ -1,5 +1,6 @@
 {
    "name": "0xshahai-next-blogtool",
+   "type": "module",
    "version": "0.1.0",
    "private": true,
    "scripts": {
