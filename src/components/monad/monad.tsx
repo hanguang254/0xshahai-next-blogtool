@@ -24,11 +24,6 @@ import { mainnet, polygon,monadTestnet } from 'wagmi/chains'
 
 import {ethers }from 'ethers'
 
-import type { NotificationArgsProps } from 'antd';
-import { notification } from 'antd';
-import { log } from 'console';
-import axios from 'axios';
-import { SmileOutlined } from '@ant-design/icons';
 
 
 
@@ -71,15 +66,7 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
     useEffect(() => {
         
         if(isConfirmed){
-            notification.open(
-                {
-                    message: '转账通知',
-                    description: `存款成功`,
-                    icon: <SmileOutlined style={{ color: '#108ee9' }} />,
-                    duration: 3,
-                    // style: { backgroundColor: 'black' },
-                }
-            );
+            
         }
         
     }, [isConfirmed]);
