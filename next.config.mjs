@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    transpilePackages: ['@ant-design/icons'],
+    transpilePackages: ['@ant-design/icons', 'rc-util', 'antd'],
     async redirects() {
         return [
           {
