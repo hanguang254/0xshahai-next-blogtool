@@ -11,7 +11,8 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const router = useRouter(); // 获取路由信息
-
+  
+  
   const menuItems = [
     { label: "主页", route: "/owner" },
     { label: "Web3工具", route: "/tools" },

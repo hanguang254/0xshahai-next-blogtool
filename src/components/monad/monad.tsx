@@ -23,7 +23,10 @@ import { useWriteContract, useAccount, useWaitForTransactionReceipt } from 'wagm
 import { mainnet, polygon,monadTestnet } from 'wagmi/chains'
 
 import {ethers }from 'ethers'
-
+import {
+    useConnectModal,
+  } from '@rainbow-me/rainbowkit';
+import { log } from 'console';
 
 
 
@@ -42,7 +45,8 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
 
     // 存款金额
     const [amount, setAmount] = React.useState("");
-    const [amountlist, setAmountList] = React.useState([]);
+    //分发金额数组
+    const [sendlist, setSendList] = React.useState([]);
     // 金额输入框错误消息
     const [amounterrormessage,setAmountErrorMessage] =React.useState("");
     
@@ -56,6 +60,8 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
     const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ 
       hash, 
     }) 
+    const [showAlert, setShowAlert] = React.useState(false); // 控制 alert 是否可见
+
 
     // 提示框状态
 
@@ -66,7 +72,10 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
     useEffect(() => {
         
         if(isConfirmed){
-            
+            setShowAlert(true);
+            setTimeout(() => {
+                setShowAlert(false); // 隐藏 alert
+            }, 5000); // 3秒后隐藏
         }
         
     }, [isConfirmed]);
@@ -108,21 +117,50 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
         setInputValue(newValue);
         validateAddresses(newValue);
     };
-    //数量输入
+    //存款数量输入
     const getInputValue = (e) => {
         // 获取输入的值
         const value = e.target.value;
-        console.log("原始输入值:", value);
+        console.log("存款输入值:", value);
+    
+        // 更新状态
+        setAmount(value);
+    };
+
+    // 分发金额输入
+    const sendInputvalue = (e) => {
+        const value = e.target.value;
+        console.log("分发输入值:", value);
     
         // 将输入值按逗号分隔并转换为数组
         const valueArray = value.split(',').map(item => item.trim());
     
+        // 如果金额无效，则打印错误
+        if (valueArray.length > 0) {
+            const validAmount = parseFloat(valueArray[0]);
+            if (isNaN(validAmount) || validAmount <= 0) {
+                console.error("无效的金额:", validAmount);
+                return; // 如果金额无效，直接返回
+            }
+        }
+    
         // 打印转换后的数组
         console.log("转换后的数组:", valueArray);
+        const amountToCopy = valueArray[0];  // 假设 valueArray 中只有一个金额
+        const numberOfAddresses = addresslist.length;
+
+        // 如果地址列表为空或金额为空，直接返回
+        if (!amountToCopy || numberOfAddresses === 0) {
+            console.error("无效的金额或地址列表为空！");
+            return;
+        }
+
+        // 复制金额，直到与地址列表长度一致
+        const repeatedAmounts = new Array(numberOfAddresses).fill(amountToCopy);
+
+        console.log("重复后的金额数组:", repeatedAmounts);
     
-        // 更新状态
-        setAmount(value);
-        setAmountList(valueArray)
+        setSendList(repeatedAmounts);
     };
 
 
@@ -147,6 +185,19 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
             });
         }
     };
+
+    //分发交易
+    const sendTransion=( )=>{
+        handleAction()
+        writeContract({
+            address: '0xeaF3c3489167B5bC73154Ae95b762Dc609d815Fe',
+            abi: monad_abi,
+            functionName: 'transfer',
+            args: [addresslist,sendlist], // 如果 deposit 函数没有输入参数，保持为空
+            chain: monadTestnet,
+            account: account.address,
+        });
+    }
 
     return (
         <>
@@ -205,6 +256,7 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
                         label="分发金额"
                         labelPlacement="outside"
                         errorMessage={amounterrormessage}
+                        onChange={sendInputvalue}
                         startContent={
                             <div className="pointer-events-none flex items-center">
                                 <span className="text-default-400 text-small">$</span>
@@ -221,6 +273,14 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
                     />
                 </div>
             </ModalBody>
+            {isConfirmed && showAlert && (
+                <Alert
+                    key="bordered"
+                    color="secondary"
+                    title={`发送交易成功！`}
+                    variant="bordered"
+                />
+            )}
             <ModalFooter className={styles.buttonContainer}>
                 <Button color="primary" 
                     onPress={handleDeposit}
@@ -231,9 +291,11 @@ const Monad1Content = ({ onClose ,...moveProps}) => {
                 </Button>
                 <Button 
                     color="primary" 
-                    onPress={handleAction}
+                    onPress={sendTransion}
                     isDisabled={!isValid || !inputValue.trim()}
                     type='submit'
+                    isLoading={isPending}
+
                 >
                     发送
                 </Button>
@@ -291,6 +353,8 @@ export default function Monad() {
     const {isOpen, onOpen, onOpenChange} = useDisclosure();
     const targetRef = React.useRef(null);
     const {moveProps} = useDraggable({targetRef, isDisabled: !isOpen});
+    const { isConnected } = useAccount(); // 获取钱包是否连接
+    const { openConnectModal } = useConnectModal(); // 获取打开连接模态框的函数
 
     const list = [
         {
@@ -315,8 +379,14 @@ export default function Monad() {
     const [selectedItem, setSelectedItem] = React.useState(null);
 
     const handleCardPress = (item) => {
-        setSelectedItem(item);
-        onOpen();
+        if (!isConnected) {
+          // 如果钱包没有连接，则打开连接钱包的模态框
+          openConnectModal();
+        } else {
+          // 如果钱包已连接，则执行相关操作
+          setSelectedItem(item);
+          onOpen();
+        }
     };
 
     return (
