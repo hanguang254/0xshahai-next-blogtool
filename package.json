@@ -1,5 +1,6 @@
 {
    "name": "0xshahai-next-blogtool",
+   "type": "module",
    "version": "0.1.0",
    "private": true,
    "scripts": {
@@ -42,4 +43,5 @@
       "tailwindcss": "^3.3.0",
       "typescript": "^5"
    }
+   
 }
