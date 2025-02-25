@@ -1,4 +1,5 @@
-import { defineConfig } from 'next';
+import pkg from 'next';
+const { defineConfig } = pkg;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
