@@ -15,8 +15,9 @@ export default function App() {
   
   const menuItems = [
     { label: "主页", route: "/owner" },
-    { label: "Web3工具", route: "/tools" },
+    // { label: "Web3工具", route: "/tools" }, // 暂不显示
     { label: "Web3导航", route: "/page3"},
+    { label: "合约钱包", route: "/wallet"},
   ];
 
 
@@ -62,7 +63,7 @@ export default function App() {
       <NavbarContent justify="end">
         <NavbarItem>
           {/* 链接按钮 */}
-          <ConnectButton label="ConnectWallet" showBalance={false}  />
+          <ConnectButton label="Connect Wallet" showBalance={false}  />
 
         </NavbarItem>
       </NavbarContent>

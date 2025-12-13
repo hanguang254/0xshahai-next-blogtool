@@ -20,6 +20,7 @@ import {
   arbitrum,
   base,
   sepolia,
+  bsc
 } from 'wagmi/chains';
 import {
   QueryClientProvider,
@@ -61,10 +62,13 @@ const monad_test = {
 
 const config = createConfig({
   connectors,
-  chains: [sepolia, monad_test],
+  chains: [sepolia, monad_test,bsc,mainnet,base],
   transports: {
     [sepolia.id]: http(),
-    [monad_test.id]: http()
+    [monad_test.id]: http(),
+    [bsc.id]: http(),
+    [mainnet.id]: http(),
+    [base.id]: http()
   }
 });
 
@@ -80,7 +84,7 @@ export default function App({ Component, pageProps }: AppProps) {
               accentColor:'linear-gradient(270deg, rgb(51, 212, 250) 0%, rgb(23, 243, 221) 100%)',
               accentColorForeground:'black'
             })}
-            initialChain={monad_test}
+            initialChain={mainnet}
             >
 
             {/* APP页面主题 */}
