@@ -4,11 +4,11 @@
 
 html,
 body {
-  height: 100vh;
-  overflow: hidden;
+  height: 100%;
+  overflow: auto;
 }
 
 #__next {
-  height: 100vh;
-  overflow: hidden;
+  height: 100%;
+  overflow: auto;
 }
