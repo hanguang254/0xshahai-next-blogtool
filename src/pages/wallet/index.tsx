@@ -3,6 +3,9 @@ import styles from './index.module.css'
 import { Card, CardHeader, CardBody, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Button, Chip, Tooltip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/react";
 import { Input } from "@heroui/input";
 import { useAccount } from 'wagmi';
+import { useWriteContract, useWaitForTransactionReceipt} from 'wagmi'
+import {wallet_abi} from '../../ABI/transferwallet';
+
 
 // 复制图标 SVG
 const CopyIcon = () => (
@@ -217,31 +220,63 @@ export default function Wallet() {
   const isValidAddress = (address: string): boolean => {
     return /^0x[a-fA-F0-9]{40}$/.test(address);
   };
+  const {writeContract,data: hash,isPending,error,reset} = useWriteContract()
+  const { isLoading: isConfirming, isSuccess } =useWaitForTransactionReceipt({hash,})
+  const isTxLoading = Boolean(isPending || isConfirming)
 
   // 添加代币地址
-  const handleAddToken = () => {
-    if (isValidAddress(newTokenAddress)) {
-      // 检查是否已存在
-      const exists = tokens.some(token => 
-        token.contractAddress.toLowerCase() === newTokenAddress.toLowerCase()
-      );
-      
-      if (!exists) {
-        setTokens([...tokens, {
-          contractAddress: newTokenAddress,
-          amount: '0.00',
-          balancePrice: '$0.00',
-          symbol: 'NEW'
-        }]);
-        setNewTokenAddress('');
-        onAddTokenOpenChange();
-      } else {
-        alert('该代币地址已存在');
-      }
-    } else {
-      alert('请输入有效的以太坊地址');
-    }
-  };
+  const handleAddToken = async () => {
+    
+  reset()
+
+  // 1. 地址格式校验
+  if (!isValidAddress(newTokenAddress)) {
+    alert('请输入有效的以太坊地址')
+    return
+  }
+
+  // 2. 是否已存在
+  const exists = tokens.some(
+    token =>
+      token.contractAddress.toLowerCase() ===
+      newTokenAddress.toLowerCase()
+  )
+
+  if (exists) {
+    alert('该代币地址已存在')
+    return
+  }
+
+  try {
+    // 3. 调用合约 setTokenAddress
+    // @ts-ignore: intentionally ignore type requirement for chain/account here
+    await writeContract({
+      address: CONTRACT_ADDRESS,
+      abi: wallet_abi,
+      functionName: 'setTokenAddress',
+      args: [newTokenAddress],
+    } as any)
+  } catch (err) {
+    console.error(err)
+    alert('交易发起失败')
+  }
+}
+useEffect(() => {
+  if (isSuccess) {
+    setTokens(prev => [
+      ...prev,
+      {
+        contractAddress: newTokenAddress,
+        amount: '0.00',
+        balancePrice: '$0.00',
+        symbol: 'NEW',
+      },
+    ])
+
+    setNewTokenAddress('')
+    onAddTokenOpenChange()
+  }
+}, [isSuccess])
 
   // 发起转账
   const handleTransfer = () => {
@@ -484,10 +519,11 @@ export default function Wallet() {
                 <Button color="danger" variant="light" onPress={onClose}>
                   取消
                 </Button>
-                <Button 
-                  color="primary" 
+                <Button
+                  color="primary"
                   onPress={handleAddToken}
-                  isDisabled={!isValidAddress(newTokenAddress)}
+                  isLoading={isTxLoading}
+                  isDisabled={!isValidAddress(newTokenAddress) || isTxLoading}
                 >
                   添加
                 </Button>
