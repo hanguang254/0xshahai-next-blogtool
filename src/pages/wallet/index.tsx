@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import styles from './index.module.css'
 import { Card, CardHeader, CardBody, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Button, Chip, Tooltip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/react";
 import { Input } from "@heroui/input";
@@ -52,27 +52,104 @@ export default function Wallet() {
   const CONTRACT_ADDRESS = '0xB0a4E8983cAa0218985adF6F6FaaFb6C233604C5';
   const OWNER_ADDRESS = '0x8d1d6e78e0ff311cbf527f2c5981814899999999';
 
-  // 模拟代币数据，后续可以替换为真实数据
-  const [tokens, setTokens] = useState<Token[]>([
-    {
-      contractAddress: '0x1234567890123456789012345678901234567890',
-      amount: '1000.00',
-      balancePrice: '$1,500.00',
-      symbol: 'USDT'
-    },
-    {
-      contractAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
-      amount: '0.5',
-      balancePrice: '$1,200.00',
-      symbol: 'ETH'
-    },
-    {
-      contractAddress: '0x9876543210987654321098765432109876543210',
-      amount: '5000.00',
-      balancePrice: '$500.00',
-      symbol: 'USDC'
-    },
-  ]);
+  // De.Fi API 配置（使用用户提供的 API key）
+  const DEFI_API_KEY = '563844c7f0bc40e2872be9ea5479ce49';
+  const DEFI_ENDPOINT = 'https://public-api.de.fi/graphql';
+
+  // 代币列表（由 De.Fi 接口获取）
+  const [tokens, setTokens] = useState<Token[]>([]);
+  const [isLoadingTokens, setIsLoadingTokens] = useState<boolean>(false);
+  const [tokensError, setTokensError] = useState<string | null>(null);
+
+  // 通用数量格式化（处理小数、科学计数法等）
+  const formatAmount = (raw: any) => {
+    try {
+      if (raw == null) return '0';
+      const num = Number(raw);
+      if (Number.isNaN(num)) return String(raw);
+      const abs = Math.abs(num);
+      const maxFraction = abs > 1 ? 4 : 8;
+      const formatted = num.toLocaleString(undefined, { maximumFractionDigits: maxFraction });
+      return formatted;
+    } catch (err) {
+      return String(raw);
+    }
+  };
+
+  // 从 De.Fi 拉取指定钱包的 ERC20 代币余额（使用用户提供的 AssetBalancesAdvanced 查询）
+  useEffect(() => {
+    const fetchBalances = async () => {
+      if (!CONTRACT_ADDRESS) return;
+      setIsLoadingTokens(true);
+      setTokensError(null);
+      const query = `query AssetBalancesAdvanced($wallets: [String!]!) {\n  assetBalancesAdvanced(\n    chainIds: [2]\n    walletAddresses: $wallets\n  ) {\n    wallet\n    chains {\n      chain {\n        id\n      }\n      assets {\n        balance\n        price\n        asset {\n          symbol\n          name\n          address\n        }\n      }\n    }\n  }\n}`;
+
+      const variables = { wallets: [CONTRACT_ADDRESS] };
+
+      try {
+        const resp = await fetch(DEFI_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Key': DEFI_API_KEY
+          },
+          body: JSON.stringify({ query, variables })
+        });
+
+        const json = await resp.json();
+        if (json.errors) {
+          console.error('De.Fi GraphQL errors:', json.errors);
+          setTokensError('De.Fi API 返回错误');
+          setTokens([]);
+          setIsLoadingTokens(false);
+          return;
+        }
+
+        const data = json.data?.assetBalancesAdvanced;
+        if (!data || !Array.isArray(data)) {
+          setTokens([]);
+          setIsLoadingTokens(false);
+          return;
+        }
+
+        const mapped: Token[] = [];
+        for (const walletEntry of data) {
+          if (!walletEntry || !walletEntry.chains) continue;
+          for (const chainEntry of walletEntry.chains) {
+            const assets = chainEntry?.assets || [];
+            for (const a of assets) {
+              const asset = a.asset || {};
+              const rawBalance = a.balance ?? 0;
+              const price = a.price ?? null;
+              const amount = formatAmount(rawBalance);
+              const balancePrice = price != null
+                ? `$${Number(price).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                : '$0.00';
+
+              const contractAddress = asset.address || `${asset.symbol || asset.name || 'unknown'}-${chainEntry?.chain?.id || '0'}`;
+
+              mapped.push({
+                contractAddress,
+                amount: amount || '0',
+                balancePrice,
+                symbol: asset.symbol || asset.name || 'N/A'
+              });
+            }
+          }
+        }
+
+        setTokens(mapped);
+      } catch (err) {
+        console.error('Fetch De.Fi error:', err);
+        setTokensError('无法从 De.Fi 获取代币数据');
+        setTokens([]);
+      } finally {
+        setIsLoadingTokens(false);
+      }
+    };
+
+    fetchBalances();
+  }, [CONTRACT_ADDRESS]);
 
   // 搜索过滤代币列表
   const filteredTokens = useMemo(() => {
@@ -298,74 +375,87 @@ export default function Wallet() {
         <CardBody>
           {isConnected && address ? (
             <>
-              <div className={styles.searchContainer}>
-                <Input
-                  placeholder="搜索合约地址或代币符号（如：USDT、ETH、USDC）..."
-                  value={searchQuery}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    setSearchQuery(e.target.value);
-                  }}
-                  className={styles.searchInput}
-                  size="sm"
-                  startContent={
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  }
-                />
-              </div>
-              <Table aria-label="代币列表" className={styles.table}>
-                <TableHeader>
-                  <TableColumn>代币合约地址</TableColumn>
-                  <TableColumn>代币符号</TableColumn>
-                  <TableColumn>代币数量</TableColumn>
-                  <TableColumn>代币余额价格</TableColumn>
-                </TableHeader>
-                <TableBody>
-                  {filteredTokens && filteredTokens.length > 0 ? (
-                    filteredTokens
-                      .filter(token => token != null) // 过滤掉 null 值
-                      .map((token, index) => (
-                        <TableRow key={`${token.contractAddress}-${index}`}>
+              {isLoadingTokens && (
+                <p className="text-center text-default-500 py-4">加载代币中...</p>
+              )}
+              {tokensError && (
+                <p className="text-center text-danger py-4">{tokensError}</p>
+              )}
+              {!isLoadingTokens && !tokensError && (
+                <>
+                  <div className={styles.searchContainer}>
+                    <Input
+                      placeholder="搜索合约地址或代币符号（如：USDT、ETH、USDC）..."
+                      value={searchQuery}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        setSearchQuery(e.target.value);
+                      }}
+                      className={styles.searchInput}
+                      size="sm"
+                      startContent={
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      }
+                    />
+                  </div>
+                  <Table aria-label="代币列表" className={styles.table}>
+                    <TableHeader>
+                      <TableColumn>代币合约地址</TableColumn>
+                      <TableColumn>代币符号</TableColumn>
+                      <TableColumn>代币数量</TableColumn>
+                      <TableColumn>代币余额价格</TableColumn>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredTokens && filteredTokens.length > 0 ? (
+                        filteredTokens
+                          .filter(token => token != null)
+                          .map((token, index) => (
+                            <TableRow key={`${token.symbol || token.contractAddress}-${index}`}>
+                              <TableCell>
+                                <div className={styles.addressCell}>
+                                  <code className={styles.contractAddress}>
+                                    {formatAddress(String(token.contractAddress || token.symbol || ''))}
+                                  </code>
+                                  <Tooltip content={copied === `token-${index}` ? '已复制!' : '点击复制完整地址'}>
+                                    <Button
+                                      isIconOnly
+                                      variant="light"
+                                      size="sm"
+                                      onPress={() => copyToClipboard(String(token.contractAddress || token.symbol || ''), `token-${index}`)}
+                                      className={styles.copyButton}
+                                    >
+                                      <CopyIcon />
+                                    </Button>
+                                  </Tooltip>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Chip size="sm" variant="flat" color="primary">
+                                  {token.symbol || 'N/A'}
+                                </Chip>
+                              </TableCell>
+                              <TableCell>{token.amount || '0.00'}</TableCell>
+                              <TableCell className={styles.priceCell}>{token.balancePrice || '$0.00'}</TableCell>
+                            </TableRow>
+                          ))
+                      ) : (
+                        <TableRow>
                           <TableCell>
-                            <div className={styles.addressCell}>
-                              <code className={styles.contractAddress}>
-                                {formatAddress(token.contractAddress || '')}
-                              </code>
-                              <Tooltip content={copied === `token-${index}` ? '已复制!' : '点击复制完整地址'}>
-                                <Button
-                                  isIconOnly
-                                  variant="light"
-                                  size="sm"
-                                  onPress={() => copyToClipboard(token.contractAddress || '', `token-${index}`)}
-                                  className={styles.copyButton}
-                                >
-                                  <CopyIcon />
-                                </Button>
-                              </Tooltip>
+                            <div className={styles.noResults}>
+                              {searchQuery && searchQuery.trim() ? '未找到匹配的代币' : '暂无代币数据'}
                             </div>
                           </TableCell>
-                          <TableCell>
-                            <Chip size="sm" variant="flat" color="primary">
-                              {token.symbol || 'N/A'}
-                            </Chip>
-                          </TableCell>
-                          <TableCell>{token.amount || '0.00'}</TableCell>
-                          <TableCell className={styles.priceCell}>{token.balancePrice || '$0.00'}</TableCell>
+                          <TableCell>{null}</TableCell>
+                          <TableCell>{null}</TableCell>
+                          <TableCell>{null}</TableCell>
                         </TableRow>
-                      ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={4}>
-                        <div className={styles.noResults}>
-                          {searchQuery && searchQuery.trim() ? '未找到匹配的代币' : '暂无代币数据'}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                      )}
+                    </TableBody>
+                  </Table>
+                </>
+              )}
             </>
           ) : (
             <p className={styles.notConnected}>请先连接钱包以查看代币列表</p>

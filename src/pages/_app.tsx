@@ -84,7 +84,7 @@ export default function App({ Component, pageProps }: AppProps) {
               accentColor:'linear-gradient(270deg, rgb(51, 212, 250) 0%, rgb(23, 243, 221) 100%)',
               accentColorForeground:'black'
             })}
-            initialChain={mainnet}
+            initialChain={bsc}
             >
 
             {/* APP页面主题 */}
