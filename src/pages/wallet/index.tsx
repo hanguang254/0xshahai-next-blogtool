@@ -81,15 +81,20 @@ export default function Wallet() {
 
   // 从 De.Fi 拉取指定钱包的 ERC20 代币余额（使用用户提供的 AssetBalancesAdvanced 查询）
   useEffect(() => {
+    let mounted = true;
+
     const fetchBalances = async () => {
       if (!CONTRACT_ADDRESS) return;
-      setIsLoadingTokens(true);
-      setTokensError(null);
-      const query = `query AssetBalancesAdvanced($wallets: [String!]!) {\n  assetBalancesAdvanced(\n    chainIds: [2]\n    walletAddresses: $wallets\n  ) {\n    wallet\n    chains {\n      chain {\n        id\n      }\n      assets {\n        balance\n        price\n        asset {\n          symbol\n          name\n          address\n        }\n      }\n    }\n  }\n}`;
-
-      const variables = { wallets: [CONTRACT_ADDRESS] };
-
       try {
+        if (mounted) {
+          setIsLoadingTokens(true);
+          setTokensError(null);
+        }
+
+        const query = `query AssetBalancesAdvanced($wallets: [String!]!) {\n  assetBalancesAdvanced(\n    chainIds: [2]\n    walletAddresses: $wallets\n  ) {\n    wallet\n    chains {\n      chain {\n        id\n      }\n      assets {\n        balance\n        price\n        asset {\n          symbol\n          name\n          address\n        }\n      }\n    }\n  }\n}`;
+
+        const variables = { wallets: [CONTRACT_ADDRESS] };
+
         const resp = await fetch(DEFI_ENDPOINT, {
           method: 'POST',
           headers: {
@@ -102,16 +107,20 @@ export default function Wallet() {
         const json = await resp.json();
         if (json.errors) {
           console.error('De.Fi GraphQL errors:', json.errors);
-          setTokensError('De.Fi API 返回错误');
-          setTokens([]);
-          setIsLoadingTokens(false);
+          if (mounted) {
+            setTokensError('De.Fi API 返回错误');
+            setTokens([]);
+            setIsLoadingTokens(false);
+          }
           return;
         }
 
         const data = json.data?.assetBalancesAdvanced;
         if (!data || !Array.isArray(data)) {
-          setTokens([]);
-          setIsLoadingTokens(false);
+          if (mounted) {
+            setTokens([]);
+            setIsLoadingTokens(false);
+          }
           return;
         }
 
@@ -141,17 +150,27 @@ export default function Wallet() {
           }
         }
 
-        setTokens(mapped);
+        if (mounted) setTokens(mapped);
       } catch (err) {
+        if ((err as any)?.name === 'AbortError') return;
         console.error('Fetch De.Fi error:', err);
-        setTokensError('无法从 De.Fi 获取代币数据');
-        setTokens([]);
+        if (mounted) {
+          setTokensError('无法从 De.Fi 获取代币数据');
+          setTokens([]);
+        }
       } finally {
-        setIsLoadingTokens(false);
+        if (mounted) setIsLoadingTokens(false);
       }
     };
 
+    // 首次立即拉取，然后每6000ms(1分钟)轮询一次
     fetchBalances();
+    const intervalId = window.setInterval(fetchBalances, 60000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(intervalId);
+    };
   }, [CONTRACT_ADDRESS]);
 
   // 搜索过滤代币列表
