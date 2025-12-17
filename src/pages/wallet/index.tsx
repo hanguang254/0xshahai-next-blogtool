@@ -125,8 +125,8 @@ export default function Wallet() {
               const rawBalance = a.balance ?? 0;
               const price = a.price ?? null;
               const amount = formatAmount(rawBalance);
-              const balancePrice = price != null
-                ? `$${Number(price).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+              const balancePrice = Number(amount) * Number(price) != null
+                ? `$${(Number(amount) * Number(price)).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
                 : '$0.00';
 
               const contractAddress = asset.address || `${asset.symbol || asset.name || 'unknown'}-${chainEntry?.chain?.id || '0'}`;
