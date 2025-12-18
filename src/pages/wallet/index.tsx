@@ -802,7 +802,7 @@ useEffect(() => {
                   <Button
                     color="primary"
                     onPress={handleLock}
-                    isLoading={lockHash && !lockSuccess} // 有 hash 并且还未确认
+                    isLoading={isLockPending||lockHash && !lockSuccess} // 有 hash 并且还未确认
                     isDisabled={!lockAmount || Number(lockAmount) <= 0 || !!lockHash && !lockSuccess} // 禁止重复点击
                   >
                     确认锁仓
