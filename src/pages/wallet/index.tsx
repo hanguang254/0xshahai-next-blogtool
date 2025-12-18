@@ -794,7 +794,7 @@ useEffect(() => {
                   <Button
                     color="primary"
                     onPress={handleApprove}
-                    isLoading={isApprovePending && !approveSuccess} // 发送后等待确认
+                    isLoading={isApprovePending||approveHash && !approveSuccess} // 发送后等待确认
                     isDisabled={!tokenAddress || (isApprovePending && !approveSuccess)}
                   >
                     {approveSuccess ? '授权成功' : '授权合约'}
