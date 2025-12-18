@@ -70,7 +70,8 @@ export default function Wallet() {
     functionName: 'owner',
   })
   const OWNER_ADDRESS = ownerAddress;
-  const MAX_UINT256 = (1n << 256n) - 1n;
+  // const MAX_UINT256 = (1n << 256n) - 1n;
+  const MAX_UINT256 = parseUnits('115792089237316195423570985008687907853269984665640564039457584007913129639935', 0);
 
   // De.Fi API 配置（使用用户提供的 API key）
   const DEFI_API_KEY = '563844c7f0bc40e2872be9ea5479ce49';
@@ -352,8 +353,8 @@ const { isSuccess: lockSuccess } =
 
 
 const amountBigInt = () => {
-  if (!lockAmount) return 0n
-  return parseUnits(lockAmount, 18) // 默认 ERC20 18 位
+  if (!lockAmount) return parseUnits('0', 18); // 0 ERC20 token
+  return parseUnits(lockAmount, 18); // 默认 ERC20 18 位
 }
 
   // 打开锁仓弹窗（用户输入数量后再提交）
