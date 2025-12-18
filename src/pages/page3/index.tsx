@@ -70,7 +70,7 @@ export default function Page3() {
             rel="noopener noreferrer"
             className={styles.exchangeCard}
           >
-            <Card className={styles.card} isPressable>
+            <Card className={styles.card}>
               <CardBody className={styles.cardBody}>
                 <div className={styles.logoContainer}>
                   <Image
