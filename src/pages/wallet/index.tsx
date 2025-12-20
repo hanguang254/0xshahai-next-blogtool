@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useEffect, use } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import styles from './index.module.css'
 import { Card, CardHeader, CardBody, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Button, Chip, Tooltip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Alert } from "@heroui/react";
 import { Input } from "@heroui/input";
-import { useAccount, useChainId } from 'wagmi';
+import { useAccount, useChainId, useSwitchChain } from 'wagmi';
 import { useWriteContract, useWaitForTransactionReceipt,useReadContract} from 'wagmi'
+import { bsc } from 'wagmi/chains';
 import {wallet_abi} from '../../ABI/transferwallet';
 import {ERC_abi} from '../../ABI/IERC20';
 
@@ -55,6 +56,10 @@ export default function Wallet() {
   const [transferTo, setTransferTo] = useState<string>('');
 
   const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
+
+  // 标记是否正在等待网络切换后发送交易
+  const [pendingAddToken, setPendingAddToken] = useState<boolean>(false);
 
   // Alert 状态
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
@@ -261,12 +266,21 @@ export default function Wallet() {
   const { isLoading: isConfirming, isSuccess } =useWaitForTransactionReceipt({hash,})
   const isTxLoading = Boolean(isPending || isConfirming)
 
-  // 添加代币地址
-  const handleAddToken = async () => {
-    reset();
-    if (!isValidAddress(newTokenAddress)) { setAlertVariant('danger'); setAlertMsg('请输入有效的以太坊地址'); return; }
+  // 发送交易的实际函数
+  const sendAddTokenTransaction = useCallback(async () => {
+    if (!isValidAddress(newTokenAddress)) {
+      setAlertVariant('danger');
+      setAlertMsg('请输入有效的以太坊地址');
+      setPendingAddToken(false);
+      return;
+    }
     const exists = tokens.some(t => t.contractAddress.toLowerCase() === newTokenAddress.toLowerCase());
-    if (exists) { setAlertVariant('danger'); setAlertMsg('该代币地址已存在'); return; }
+    if (exists) {
+      setAlertVariant('danger');
+      setAlertMsg('该代币地址已存在');
+      setPendingAddToken(false);
+      return;
+    }
 
     try {
       await writeContract({
@@ -275,11 +289,45 @@ export default function Wallet() {
         functionName: 'setTokenAddress',
         args: [newTokenAddress],
       } as any);
+      setPendingAddToken(false);
     } catch (err) {
       console.error(err);
-      setAlertVariant('danger'); setAlertMsg('交易发起失败');
+      setAlertVariant('danger');
+      setAlertMsg('交易发起失败');
+      setPendingAddToken(false);
     }
+  }, [newTokenAddress, tokens, writeContract]);
+
+  // 添加代币地址
+  const handleAddToken = async () => {
+    reset();
+    
+    // 检查当前网络是否是 BSC，如果不是则切换
+    if (chainId !== bsc.id) {
+      try {
+        setPendingAddToken(true);
+        switchChain({ chainId: bsc.id });
+        setAlertVariant('primary');
+        setAlertMsg('正在切换到 BSC 网络，请确认...');
+      } catch (err) {
+        console.error('切换网络失败:', err);
+        setAlertVariant('danger');
+        setAlertMsg('切换网络失败，请手动切换到 BSC 网络');
+        setPendingAddToken(false);
+      }
+      return;
+    }
+
+    // 如果已经是 BSC 网络，直接发送交易
+    await sendAddTokenTransaction();
   };
+
+  // 监听网络切换，当切换到 BSC 后自动发送交易
+  useEffect(() => {
+    if (chainId === bsc.id && pendingAddToken) {
+      sendAddTokenTransaction();
+    }
+  }, [chainId, pendingAddToken, sendAddTokenTransaction]);
 useEffect(() => {
     if (isSuccess) {
       setTokens(prev => [...prev, { contractAddress: newTokenAddress, amount: '0.00', balancePrice: '$0.00', symbol: 'NEW' }]);
