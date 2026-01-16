@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react'
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import styles from './index.module.css'
 import { Card, CardHeader, CardBody, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Button, Chip, Tooltip, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Alert } from "@heroui/react";
 import { Input } from "@heroui/input";
@@ -41,9 +41,17 @@ interface Token {
   amount: string;
   balancePrice: string;
   symbol?: string;
+  decimals?: number;
 }
 
 export default function Wallet() {
+  // 客户端检查，避免 SSR hydration 错误
+  const [isMounted, setIsMounted] = useState(false);
+  
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const { address, isConnected } = useAccount();
   const [copied, setCopied] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -65,8 +73,8 @@ export default function Wallet() {
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertVariant, setAlertVariant] = useState<'primary' | 'success' | 'danger' | 'warning'>('primary');
 
-  // 静态显示的合约与 owner 地址
-  const CONTRACT_ADDRESS = '0x223B8B547B014511115ae380b35578336Ec001bB';
+  // 静态显示的合约钱包地址
+  const CONTRACT_ADDRESS = '0x7961d02eD51bDD9a76E83C99a4F359a512A087bC';
   const {
     data: ownerAddress, isPending: isOwnerPending, error: ownerError
   } = useReadContract({
@@ -78,11 +86,15 @@ export default function Wallet() {
   // const MAX_UINT256 = (1n << 256n) - 1n;
   const MAX_UINT256 = parseUnits('115792089237316195423570985008687907853269984665640564039457584007913129639935', 0);
 
-  // De.Fi API 配置（使用用户提供的 API key）
-  const DEFI_API_KEY = '563844c7f0bc40e2872be9ea5479ce49';
-  const DEFI_ENDPOINT = 'https://public-api.de.fi/graphql';
+  // Chainbase API 配置
+  const CHAINBASE_API_KEY = '38HqF3yzT2k3GPnGF5tBCoDmnRQ';
+  const CHAINBASE_ENDPOINT = 'https://api.chainbase.online/v1';
+  // BSC 链 ID (根据 Chainbase 文档，BSC 的 chain_id 是 56)
+  const CHAIN_ID = '56';
+  // 请求频率限制：每秒2次 = 每500ms一次
+  const REQUEST_INTERVAL = 300;
 
-  // 代币列表（由 De.Fi 接口获取）
+  // 代币列表（由 Chainbase 接口获取）
   const [tokens, setTokens] = useState<Token[]>([]);
   const [isLoadingTokens, setIsLoadingTokens] = useState<boolean>(false);
   const [tokensError, setTokensError] = useState<string | null>(null);
@@ -102,8 +114,68 @@ export default function Wallet() {
     }
   };
 
-  // 从 De.Fi 拉取指定钱包的 ERC20 代币余额（使用用户提供的 AssetBalancesAdvanced 查询）
+  // 将十六进制余额转换为格式化的十进制字符串
+  const formatHexBalance = (hexBalance: string, decimals: number): string => {
+    try {
+      if (!hexBalance || hexBalance === '0x0' || hexBalance === '0x') return '0';
+      const balanceBigInt = BigInt(hexBalance);
+      const divisor = BigInt(10 ** decimals);
+      const wholePart = balanceBigInt / divisor;
+      const fractionalPart = balanceBigInt % divisor;
+      
+      if (fractionalPart === BigInt(0)) {
+        return wholePart.toString();
+      }
+      
+      const fractionalStr = fractionalPart.toString().padStart(decimals, '0');
+      const trimmedFractional = fractionalStr.replace(/0+$/, '');
+      const num = Number(wholePart) + Number('0.' + trimmedFractional);
+      
+      const abs = Math.abs(num);
+      const maxFraction = abs > 1 ? 4 : 8;
+      return num.toLocaleString(undefined, { maximumFractionDigits: maxFraction });
+    } catch (err) {
+      console.error('格式化余额失败:', err);
+      return '0';
+    }
+  };
+
+  // 获取代币价格（带频率限制）
+  const fetchTokenPrice = async (contractAddress: string, delay: number = 0): Promise<number | null> => {
+    if (delay > 0) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    
+    try {
+      const response = await fetch(
+        `${CHAINBASE_ENDPOINT}/token/price?chain_id=${CHAIN_ID}&contract_address=${contractAddress}`,
+        {
+          method: 'GET',
+          headers: {
+            'x-api-key': CHAINBASE_API_KEY,
+            'accept': 'application/json'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        console.error(`获取价格失败 ${contractAddress}:`, response.statusText);
+        return null;
+      }
+      
+      const json = await response.json();
+      return json.data?.price || null;
+    } catch (err) {
+      console.error(`获取价格错误 ${contractAddress}:`, err);
+      return null;
+    }
+  };
+
+  // 从 Chainbase 拉取指定钱包的 ERC20 代币余额和价格
   useEffect(() => {
+    // 确保只在客户端执行
+    if (typeof window === 'undefined') return;
+    
     let mounted = true;
 
     const fetchBalances = async () => {
@@ -114,71 +186,70 @@ export default function Wallet() {
           setTokensError(null);
         }
 
-        const query = `query AssetBalancesAdvanced($wallets: [String!]!) {\n  assetBalancesAdvanced(\n    chainIds: [2]\n    walletAddresses: $wallets\n  ) {\n    wallet\n    chains {\n      chain {\n        id\n      }\n      assets {\n        balance\n        price\n        asset {\n          symbol\n          name\n          address\n        }\n      }\n    }\n  }\n}`;
-
-        const variables = { wallets: [CONTRACT_ADDRESS] };
-
-        const resp = await fetch(DEFI_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Api-Key': DEFI_API_KEY
-          },
-          body: JSON.stringify({ query, variables })
-        });
-
-        const json = await resp.json();
-        if (json.errors) {
-          console.error('De.Fi GraphQL errors:', json.errors);
-          if (mounted) {
-            setTokensError('De.Fi API 返回错误');
-            setTokens([]);
-            setIsLoadingTokens(false);
-          }
-          return;
-        }
-
-        const data = json.data?.assetBalancesAdvanced;
-        if (!data || !Array.isArray(data)) {
-          if (mounted) {
-            setTokens([]);
-            setIsLoadingTokens(false);
-          }
-          return;
-        }
-
-        const mapped: Token[] = [];
-        for (const walletEntry of data) {
-          if (!walletEntry || !walletEntry.chains) continue;
-          for (const chainEntry of walletEntry.chains) {
-            const assets = chainEntry?.assets || [];
-            for (const a of assets) {
-              const asset = a.asset || {};
-              const rawBalance = a.balance ?? 0;
-              const price = a.price ?? null;
-              const amount = formatAmount(rawBalance);
-              const balancePrice = Number(amount) * Number(price) != null
-                ? `$${(Number(amount) * Number(price)).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-                : '$0.00';
-
-              const contractAddress = asset.address || `${asset.symbol || asset.name || 'unknown'}-${chainEntry?.chain?.id || '0'}`;
-
-              mapped.push({
-                contractAddress,
-                amount: amount || '0',
-                balancePrice,
-                symbol: asset.symbol || asset.name || 'N/A'
-              });
+        // 第一步：获取代币列表
+        const tokensResponse = await fetch(
+          `${CHAINBASE_ENDPOINT}/account/tokens?chain_id=${CHAIN_ID}&address=${CONTRACT_ADDRESS}&limit=100&page=1`,
+          {
+            method: 'GET',
+            headers: {
+              'x-api-key': CHAINBASE_API_KEY,
+              'accept': 'application/json'
             }
           }
+        );
+
+        if (!tokensResponse.ok) {
+          throw new Error(`Chainbase API 返回错误: ${tokensResponse.statusText}`);
+        }
+
+        const tokensJson = await tokensResponse.json();
+        const tokensData = tokensJson.data || [];
+
+        if (!Array.isArray(tokensData) || tokensData.length === 0) {
+          if (mounted) {
+            setTokens([]);
+            setIsLoadingTokens(false);
+          }
+          return;
+        }
+
+        // 第二步：为每个代币获取价格（控制频率：每秒2次 = 每500ms一次）
+        // 第一个价格请求需要在获取代币列表后等待，以符合频率限制
+        const mapped: Token[] = [];
+        for (let i = 0; i < tokensData.length; i++) {
+          const token = tokensData[i];
+          const contractAddress = token.contract_address || '';
+          const balance = token.balance || '0x0';
+          const decimals = token.decimals || 18;
+          const symbol = token.symbol || token.name || 'N/A';
+          
+          // 格式化余额
+          const amount = formatHexBalance(balance, decimals);
+          
+          // 获取价格（带延迟以控制频率：第一个请求延迟500ms，后续每个延迟500ms）
+          const delay = (i + 1) * REQUEST_INTERVAL;
+          const price = await fetchTokenPrice(contractAddress, delay);
+          
+          // 计算余额价格
+          const balancePrice = price && Number(amount) > 0
+            ? `$${(Number(amount) * price).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+            : '$0.00';
+
+          mapped.push({
+            contractAddress,
+            amount: amount || '0',
+            balancePrice,
+            symbol,
+            decimals
+          });
         }
 
         if (mounted) setTokens(mapped);
       } catch (err) {
         if ((err as any)?.name === 'AbortError') return;
-        console.error('Fetch De.Fi error:', err);
+        console.error('Fetch Chainbase error:', err);
         if (mounted) {
-          setTokensError('无法从 De.Fi 获取代币数据');
+          setTokensError('无法从 Chainbase 获取代币数据');
           setTokens([]);
         }
       } finally {
@@ -186,13 +257,13 @@ export default function Wallet() {
       }
     };
 
-    // 首次立即拉取，然后每6000ms(1分钟)轮询一次
+    // 首次立即拉取，然后每60秒轮询一次
     fetchBalances();
-    const intervalId = window.setInterval(fetchBalances, 60000);
+    const intervalId = setInterval(fetchBalances, 60000);
 
     return () => {
       mounted = false;
-      window.clearInterval(intervalId);
+      clearInterval(intervalId);
     };
   }, [CONTRACT_ADDRESS]);
 
@@ -330,7 +401,7 @@ export default function Wallet() {
   }, [chainId, pendingAddToken, sendAddTokenTransaction]);
 useEffect(() => {
     if (isSuccess) {
-      setTokens(prev => [...prev, { contractAddress: newTokenAddress, amount: '0.00', balancePrice: '$0.00', symbol: 'NEW' }]);
+      setTokens(prev => [...prev, { contractAddress: newTokenAddress, amount: '0.00', balancePrice: '$0.00', symbol: 'NEW', decimals: 18 }]);
       setNewTokenAddress('');
       onAddTokenOpenChange();
       setAlertVariant('success'); setAlertMsg('代币地址添加成功');
@@ -352,6 +423,16 @@ const {
   functionName: 'TokenAddress',
 })
 console.log('tokenAddress', tokenAddress);
+
+// 过滤出与合约设置的代币地址匹配的代币（用于转账）
+const transferableTokens = useMemo(() => {
+  if (!tokenAddress) return [];
+  const tokenAddr = String(tokenAddress).toLowerCase();
+  return tokens.filter(token => 
+    String(token.contractAddress).toLowerCase() === tokenAddr
+  );
+}, [tokens, tokenAddress]);
+
 // 查询部分合约信息（基于合约返回的 tokenAddress）
 const {data: allowance,isPending: isReadPending,error: readError,} = useReadContract({
   address: (tokenAddress as `0x${string}`) || undefined,
@@ -360,6 +441,11 @@ const {data: allowance,isPending: isReadPending,error: readError,} = useReadCont
   args: [address, CONTRACT_ADDRESS],
   query: {
     enabled: Boolean(address && tokenAddress),
+    // 优化查询配置
+    staleTime: 3000, // 10秒内使用缓存数据，减少重复查询
+    gcTime: 10000, // 30秒后清除缓存
+    refetchOnWindowFocus: false, // 窗口聚焦时不自动重新查询
+    retry: 2, // 失败时重试2次
   },
 })
 console.log('allowance', allowance);
@@ -490,6 +576,24 @@ const handleApprove = async () => {
   }
 };
 
+// 判断是否需要授权
+const needsApproval = useMemo(() => {
+  if (!allowance) return true;
+  const currentAllowance = BigInt(allowance as any);
+  return currentAllowance <= BigInt(0);
+}, [allowance]);
+
+// 合并的授权/锁仓处理函数
+const handleApproveOrLock = async () => {
+  if (needsApproval) {
+    // 执行授权逻辑
+    await handleApprove();
+  } else {
+    // 执行锁仓逻辑
+    await handleLock();
+  }
+};
+
 useEffect(() => {
   if (approveSuccess) {
     setAlertVariant('success');
@@ -514,36 +618,157 @@ useEffect(() => {
 
   // 发起转账
   const handleTransfer = () => {
-    // 如果没有代币，不打开
-    if (tokens.length === 0) {
+    // 如果没有已设置的代币地址，不打开
+    if (!tokenAddress) {
       return;
     }
-    // 默认选择第一个代币
-    setSelectedToken(tokens[0]);
+    // 重置转账相关状态，避免上次交易的状态影响
+    resetTransfer();
+    setAlertMsg(null);
+    // 默认选择第一个匹配的代币
+    if (transferableTokens.length > 0) {
+      setSelectedToken(transferableTokens[0]);
+    } else {
+      setSelectedToken(null);
+    }
     setTransferAmount('');
     setTransferTo('');
     onTransferOpen();
   };
 
+  // 转账相关状态
+  const {
+    writeContract: writeTransfer,
+    data: transferHash,
+    isPending: isTransferPending,
+    error: transferError,
+    reset: resetTransfer,
+  } = useWriteContract();
+
+  const { isSuccess: transferSuccess, isLoading: isTransferConfirming } =
+    useWaitForTransactionReceipt({ hash: transferHash });
+
+  const isTransferLoading = Boolean(isTransferPending || isTransferConfirming);
+
   // 确认转账
-  const handleConfirmTransfer = () => {
+  const handleConfirmTransfer = async () => {
     if (!transferTo || !transferAmount) {
-      alert('请填写完整信息');
+      setAlertVariant('danger');
+      setAlertMsg('请填写完整信息');
       return;
     }
     if (!isValidAddress(transferTo)) {
-      alert('请输入有效的接收地址');
+      setAlertVariant('danger');
+      setAlertMsg('请输入有效的接收地址');
       return;
     }
-    // 这里可以添加实际的转账逻辑
-    console.log('转账信息:', {
-      token: selectedToken,
-      to: transferTo,
-      amount: transferAmount
-    });
-    alert('转账功能待实现');
-    onTransferOpenChange();
+    if (!selectedToken) {
+      setAlertVariant('danger');
+      setAlertMsg('请选择要转账的代币');
+      return;
+    }
+    if (!tokenAddress) {
+      setAlertVariant('danger');
+      setAlertMsg('代币地址未设置');
+      return;
+    }
+
+    // 检查网络
+    if (chainId !== bsc.id) {
+      try {
+        switchChain({ chainId: bsc.id });
+        setAlertVariant('primary');
+        setAlertMsg('正在切换到 BSC 网络，请确认...');
+      } catch (err) {
+        console.error('切换网络失败:', err);
+        setAlertVariant('danger');
+        setAlertMsg('切换网络失败，请手动切换到 BSC 网络');
+      }
+      return;
+    }
+
+    try {
+      // 获取代币的 decimals，默认 18
+      const decimals = selectedToken.decimals || 18;
+      
+      // 验证余额 - 需要先去掉格式化字符串中的逗号
+      // selectedToken.amount 可能是 "35,645.5789" 这样的格式化字符串
+      const amountStr = (selectedToken.amount || '0').replace(/,/g, ''); // 去掉所有逗号
+      const availableBalance = parseFloat(amountStr);
+      const transferAmountNum = parseFloat(transferAmount);
+      
+      if (isNaN(availableBalance) || isNaN(transferAmountNum)) {
+        setAlertVariant('danger');
+        setAlertMsg('请输入有效的转账金额');
+        return;
+      }
+      
+      if (transferAmountNum > availableBalance) {
+        setAlertVariant('danger');
+        setAlertMsg(`转账金额超过可用余额 ${selectedToken.amount}`);
+        return;
+      }
+      
+      // 将用户输入的金额转换为 BigInt（考虑 decimals）
+      const amountBigInt = parseUnits(transferAmount, decimals);
+
+      // 调用合约的 transferToken 方法
+      await writeTransfer({
+        address: CONTRACT_ADDRESS,
+        abi: wallet_abi,
+        functionName: 'transferToken',
+        args: [[transferTo], [amountBigInt]],
+      } as any);
+
+      setAlertVariant('primary');
+      setAlertMsg('转账交易已发送，等待确认...');
+    } catch (err: any) {
+      console.error('转账失败:', err);
+
+      // 如果用户取消交易
+      if (err?.cause?.code === 4001) {
+        setAlertVariant('warning');
+        setAlertMsg('用户取消了转账交易');
+      } else {
+        setAlertVariant('danger');
+        setAlertMsg('转账交易发送失败');
+      }
+
+      // 重置状态
+      resetTransfer();
+    }
   };
+
+  // 转账成功后关闭弹窗
+  useEffect(() => {
+    if (transferSuccess && isTransferOpen) {
+      setTransferAmount('');
+      setTransferTo('');
+      setSelectedToken(null);
+      // 关闭弹窗
+      onTransferOpenChange();
+    }
+  }, [transferSuccess, isTransferOpen, onTransferOpenChange]);
+
+  // 当弹窗关闭后显示成功消息（使用 ref 防止重复显示）
+  const hasShownSuccessRef = useRef(false);
+  
+  useEffect(() => {
+    if (transferSuccess && !isTransferOpen && !hasShownSuccessRef.current) {
+      // 弹窗已关闭，显示成功消息
+      setAlertVariant('success');
+      setAlertMsg('转账交易已确认');
+      hasShownSuccessRef.current = true;
+      // 可以在这里触发代币列表刷新
+    }
+  }, [transferSuccess, isTransferOpen]);
+
+  // 当开始新的转账时，重置成功消息标记
+  useEffect(() => {
+    if (isTransferOpen && transferHash) {
+      hasShownSuccessRef.current = false;
+    }
+  }, [isTransferOpen, transferHash]);
 
 // 通知关闭自动
 useEffect(() => {
@@ -558,7 +783,8 @@ useEffect(() => {
 
   return (
     <div className={styles.container}>
-      {alertMsg && (
+      {/* 只在没有弹窗打开时显示外层 Alert */}
+      {alertMsg && !isAddTokenOpen && !isLockOpen && !isTransferOpen && (
         <Alert
           key={alertVariant}
           color={alertVariant}
@@ -658,15 +884,15 @@ useEffect(() => {
               >
                 锁仓转入
               </Button>
-              <Button 
-                color="secondary" 
-                size="sm" 
-                onPress={onTransferOpen}
-                className={styles.actionButton}
-                isDisabled={!isConnected || tokens.length === 0}
-              >
-                发起转账
-              </Button>
+                <Button 
+                  color="secondary" 
+                  size="sm" 
+                  onPress={handleTransfer}
+                  className={styles.actionButton}
+                  isDisabled={!isConnected || !tokenAddress}
+                >
+                  发起转账
+                </Button>
             </div>
           </div>
         </CardHeader>
@@ -768,6 +994,20 @@ useEffect(() => {
             <>
               <ModalHeader className="flex flex-col gap-1">设置代币地址</ModalHeader>
               <ModalBody>
+                {/* 在弹窗内显示错误消息，优先级最高 */}
+                {alertMsg && (
+                  <Alert
+                    key={alertVariant}
+                    color={alertVariant}
+                    title={alertMsg}
+                    variant="flat"
+                    onClose={() => setAlertMsg(null)}
+                    className="mb-4 z-50"
+                    classNames={{
+                      base: "z-50"
+                    }}
+                  />
+                )}
                 <Input
                   label="代币合约地址"
                   placeholder="0x..."
@@ -803,6 +1043,20 @@ useEffect(() => {
               <>
                 <ModalHeader className="flex flex-col gap-1">锁仓转入</ModalHeader>
                 <ModalBody>
+                  {/* 在弹窗内显示错误消息，优先级最高 */}
+                  {alertMsg && (
+                    <Alert
+                      key={alertVariant}
+                      color={alertVariant}
+                      title={alertMsg}
+                      variant="flat"
+                      onClose={() => setAlertMsg(null)}
+                      className="mb-4 z-50"
+                      classNames={{
+                        base: "z-50"
+                      }}
+                    />
+                  )}
                   <div className="mb-4">
                     <Input
                       label="转入数量"
@@ -841,19 +1095,22 @@ useEffect(() => {
                   </Button>
                   <Button
                     color="primary"
-                    onPress={handleApprove}
-                    isLoading={isApprovePending||approveHash && !approveSuccess} // 发送后等待确认
-                    isDisabled={!tokenAddress || (isApprovePending && !approveSuccess)}
+                    onPress={handleApproveOrLock}
+                    isLoading={
+                      needsApproval
+                        ? (isApprovePending || (approveHash && !approveSuccess))
+                        : (isLockPending || (lockHash && !lockSuccess))
+                    }
+                    isDisabled={
+                      !tokenAddress ||
+                      (needsApproval
+                        ? (isApprovePending && !approveSuccess)
+                        : (!lockAmount || Number(lockAmount) <= 0 || (lockHash && !lockSuccess)))
+                    }
                   >
-                    {approveSuccess ? '授权成功' : '授权合约'}
-                  </Button> 
-                  <Button
-                    color="primary"
-                    onPress={handleLock}
-                    isLoading={isLockPending||lockHash && !lockSuccess} // 有 hash 并且还未确认
-                    isDisabled={!lockAmount || Number(lockAmount) <= 0 || !!lockHash && !lockSuccess} // 禁止重复点击
-                  >
-                    确认锁仓
+                    {needsApproval
+                      ? (approveSuccess ? '授权成功' : '授权合约')
+                      : '确认锁仓'}
                   </Button>
                 </ModalFooter>
               </>
@@ -870,12 +1127,38 @@ useEffect(() => {
                 发起转账
               </ModalHeader>
               <ModalBody>
-                {tokens.length > 0 ? (
+                {/* 在弹窗内显示错误消息，优先级最高（但不显示成功消息，成功消息在弹窗关闭后显示） */}
+                {alertMsg && alertVariant !== 'success' && (
+                  <Alert
+                    key={alertVariant}
+                    color={alertVariant}
+                    title={alertMsg}
+                    variant="flat"
+                    onClose={() => setAlertMsg(null)}
+                    className="mb-4 z-50"
+                    classNames={{
+                      base: "z-50"
+                    }}
+                  />
+                )}
+                {!tokenAddress ? (
+                  <Card className="w-full">
+                    <CardBody className="flex flex-col items-center justify-center py-8">
+                      <Alert
+                        color="warning"
+                        variant="flat"
+                        title="未设置代币地址"
+                        description="请先在代币列表页面设置代币地址，然后才能进行转账操作。"
+                        className="w-full"
+                      />
+                    </CardBody>
+                  </Card>
+                ) : transferableTokens.length > 0 ? (
                   <>
                     <div>
                       <label className="text-sm text-default-600 mb-2 block">选择代币</label>
                       <div className="flex flex-col gap-2">
-                        {tokens.map((token, index) => (
+                        {transferableTokens.map((token, index) => (
                           <Button
                             key={index}
                             variant={selectedToken?.contractAddress === token.contractAddress ? "solid" : "bordered"}
@@ -923,26 +1206,41 @@ useEffect(() => {
                     )}
                   </>
                 ) : (
-                  <p className="text-center text-default-500 py-4">
-                    请先设置代币地址
-                  </p>
+                  <Card className="w-full">
+                    <CardBody className="flex flex-col items-center justify-center py-8">
+                      <Alert
+                        color="default"
+                        variant="flat"
+                        title="暂无匹配的代币"
+                        description={`已设置的代币地址为 ${formatAddress(String(tokenAddress))}，但在代币列表中未找到匹配的代币。请确保该代币地址有余额。`}
+                        className="w-full"
+                      />
+                    </CardBody>
+                  </Card>
                 )}
               </ModalBody>
               <ModalFooter>
-                <Button color="danger" variant="light" onPress={onClose}>
+                <Button 
+                  color="danger" 
+                  variant="light" 
+                  onPress={onClose}
+                  isDisabled={isTransferLoading}
+                >
                   取消
                 </Button>
                 <Button 
                   color="primary" 
                   onPress={handleConfirmTransfer}
+                  isLoading={isTransferLoading}
                   isDisabled={
                     !selectedToken ||
                     !isValidAddress(transferTo) || 
                     !transferAmount || 
-                    parseFloat(transferAmount) <= 0
+                    parseFloat(transferAmount) <= 0 ||
+                    isTransferLoading
                   }
                 >
-                  确认转账
+                  {isTransferLoading ? '处理中...' : '确认转账'}
                 </Button>
               </ModalFooter>
             </>

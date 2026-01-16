@@ -66,7 +66,14 @@ const config = createConfig({
   transports: {
     [sepolia.id]: http(),
     [monad_test.id]: http(),
-    [bsc.id]: http(),
+    // 使用更快的 BSC RPC 节点（可以替换为你自己的节点或付费服务）
+    [bsc.id]: http('https://api.zan.top/node/v1/bsc/mainnet/e7f93263291b4a79a83a9b5c0fe72048'), // BSC 官方节点
+    // 或者使用其他快速节点：
+    // [bsc.id]: http('https://bsc-dataseed2.binance.org'),
+    // [bsc.id]: http('https://bsc-dataseed3.binance.org'),
+    // [bsc.id]: http('https://bsc-dataseed4.binance.org'),
+    // 付费节点示例（需要 API key）：
+    // [bsc.id]: http('https://bsc-mainnet.g.alchemy.com/v2/YOUR_API_KEY'),
     [mainnet.id]: http(),
     [base.id]: http()
   }
