@@ -336,38 +336,10 @@ export default function Wallet() {
   const {writeContract,data: hash,isPending,error,reset} = useWriteContract()
   const { isLoading: isConfirming, isSuccess } =useWaitForTransactionReceipt({hash,})
   const isTxLoading = Boolean(isPending || isConfirming)
+  
+  // 发送交易函数的 ref（将在 tokenAddress 定义后赋值）
+  const sendAddTokenTransactionRef = useRef<(() => Promise<void>) | null>(null);
 
-  // 发送交易的实际函数
-  const sendAddTokenTransaction = useCallback(async () => {
-    if (!isValidAddress(newTokenAddress)) {
-      setAlertVariant('danger');
-      setAlertMsg('请输入有效的以太坊地址');
-      setPendingAddToken(false);
-      return;
-    }
-    const exists = tokens.some(t => t.contractAddress.toLowerCase() === newTokenAddress.toLowerCase());
-    if (exists) {
-      setAlertVariant('danger');
-      setAlertMsg('该代币地址已存在');
-      setPendingAddToken(false);
-      return;
-    }
-
-    try {
-      await writeContract({
-        address: CONTRACT_ADDRESS,
-        abi: wallet_abi,
-        functionName: 'setTokenAddress',
-        args: [newTokenAddress],
-      } as any);
-      setPendingAddToken(false);
-    } catch (err) {
-      console.error(err);
-      setAlertVariant('danger');
-      setAlertMsg('交易发起失败');
-      setPendingAddToken(false);
-    }
-  }, [newTokenAddress, tokens, writeContract]);
 
   // 添加代币地址
   const handleAddToken = async () => {
@@ -390,15 +362,18 @@ export default function Wallet() {
     }
 
     // 如果已经是 BSC 网络，直接发送交易
-    await sendAddTokenTransaction();
+    // sendAddTokenTransaction 在 tokenAddress 定义后创建
+    if (sendAddTokenTransactionRef.current) {
+      await sendAddTokenTransactionRef.current();
+    }
   };
 
   // 监听网络切换，当切换到 BSC 后自动发送交易
   useEffect(() => {
-    if (chainId === bsc.id && pendingAddToken) {
-      sendAddTokenTransaction();
+    if (chainId === bsc.id && pendingAddToken && sendAddTokenTransactionRef.current) {
+      sendAddTokenTransactionRef.current();
     }
-  }, [chainId, pendingAddToken, sendAddTokenTransaction]);
+  }, [chainId, pendingAddToken]);
 useEffect(() => {
     if (isSuccess) {
       setTokens(prev => [...prev, { contractAddress: newTokenAddress, amount: '0.00', balancePrice: '$0.00', symbol: 'NEW', decimals: 18 }]);
@@ -426,6 +401,44 @@ console.log('tokenAddress', tokenAddress);
 
 // 零地址（未设置代币地址时的默认值）
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
+  // 发送交易的实际函数（在 tokenAddress 定义后创建）
+  const sendAddTokenTransaction = useCallback(async () => {
+    if (!isValidAddress(newTokenAddress)) {
+      setAlertVariant('danger');
+      setAlertMsg('请输入有效的以太坊地址');
+      setPendingAddToken(false);
+      return;
+    }
+    
+    // 检查是否与当前合约中设置的代币地址相同
+    if (tokenAddress && String(tokenAddress).toLowerCase() === newTokenAddress.toLowerCase()) {
+      setAlertVariant('warning');
+      setAlertMsg('该代币地址已设置为当前代币地址');
+      setPendingAddToken(false);
+      return;
+    }
+
+    try {
+      await writeContract({
+        address: CONTRACT_ADDRESS,
+        abi: wallet_abi,
+        functionName: 'setTokenAddress',
+        args: [newTokenAddress],
+      } as any);
+      setPendingAddToken(false);
+    } catch (err) {
+      console.error(err);
+      setAlertVariant('danger');
+      setAlertMsg('交易发起失败');
+      setPendingAddToken(false);
+    }
+  }, [newTokenAddress, tokenAddress, writeContract]);
+  
+  // 更新 ref
+  useEffect(() => {
+    sendAddTokenTransactionRef.current = sendAddTokenTransaction;
+  }, [sendAddTokenTransaction]);
 
 // 检查代币地址是否有效（不是零地址且不为空）
 const isValidTokenAddress = useMemo(() => {
