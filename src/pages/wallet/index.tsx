@@ -374,9 +374,6 @@ export default function Wallet() {
       sendAddTokenTransactionRef.current();
     }
   }, [chainId, pendingAddToken]);
-// 设置成功后的处理将在 tokenAddress 定义后添加
-
-
 // 锁仓转入逻辑
 // 查询以添加的代币地址
 
@@ -398,6 +395,19 @@ const {
   },
 })
 console.log('tokenAddress', tokenAddress);
+
+// 设置代币地址成功后的处理
+useEffect(() => {
+  if (isSuccess) {
+    setNewTokenAddress('');
+    onAddTokenOpenChange(); // 关闭弹窗
+    setAlertVariant('success');
+    setAlertMsg('代币地址设置成功');
+    // 立即刷新 tokenAddress 查询，获取最新的链上数据
+    // isSuccess 表示交易已在链上确认，可以立即查询
+    refetchTokenAddress();
+  }
+}, [isSuccess, refetchTokenAddress, onAddTokenOpenChange]);
 
 // 零地址（未设置代币地址时的默认值）
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
@@ -457,7 +467,7 @@ const transferableTokens = useMemo(() => {
 }, [tokens, tokenAddress, isValidTokenAddress]);
 
 // 查询部分合约信息（基于合约返回的 tokenAddress）
-const {data: allowance,isPending: isReadPending,error: readError,} = useReadContract({
+const {data: allowance,isPending: isReadPending,error: readError,refetch: refetchAllowance,} = useReadContract({
   address: (tokenAddress as `0x${string}`) || undefined,
   abi: ERC_abi,
   functionName: 'allowance',
@@ -465,8 +475,8 @@ const {data: allowance,isPending: isReadPending,error: readError,} = useReadCont
   query: {
     enabled: Boolean(address && tokenAddress),
     // 优化查询配置
-    staleTime: 0, // 10秒内使用缓存数据，减少重复查询
-    gcTime: 10000, // 30秒后清除缓存
+    staleTime: 0, // 不使用缓存，总是获取最新数据
+    gcTime: 10000, // 10秒后清除缓存
     refetchOnWindowFocus: false, // 窗口聚焦时不自动重新查询
     retry: 2, // 失败时重试2次
   },
@@ -621,8 +631,12 @@ useEffect(() => {
   if (approveSuccess) {
     setAlertVariant('success');
     setAlertMsg('授权交易已确认');
+    // 授权成功后刷新 allowance 查询，获取最新额度
+    setTimeout(() => {
+      refetchAllowance();
+    }, 1000); // 延迟1秒后刷新，确保链上状态已更新
   }
-}, [approveSuccess]);
+}, [approveSuccess, refetchAllowance]);
 
 
 // 锁仓交易成功后关闭弹窗
