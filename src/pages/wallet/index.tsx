@@ -339,12 +339,13 @@ export default function Wallet() {
   
   // 发送交易函数的 ref（将在 tokenAddress 定义后赋值）
   const sendAddTokenTransactionRef = useRef<(() => Promise<void>) | null>(null);
+  
+  // 使用 ref 防止重复显示成功消息
+  const hasShownAddTokenSuccessRef = useRef(false);
 
 
   // 添加代币地址
   const handleAddToken = async () => {
-    reset();
-    
     // 检查当前网络是否是 BSC，如果不是则切换
     if (chainId !== bsc.id) {
       try {
@@ -396,18 +397,33 @@ const {
 })
 console.log('tokenAddress', tokenAddress);
 
-// 设置代币地址成功后的处理
+// 设置代币地址成功后关闭弹窗
 useEffect(() => {
-  if (isSuccess) {
+  if (isSuccess && isAddTokenOpen) {
     setNewTokenAddress('');
     onAddTokenOpenChange(); // 关闭弹窗
+    // 立即刷新 tokenAddress 查询，获取最新的链上数据
+    refetchTokenAddress();
+    hasShownAddTokenSuccessRef.current = false; // 重置标记，准备显示成功消息
+  }
+}, [isSuccess, isAddTokenOpen, refetchTokenAddress, onAddTokenOpenChange]);
+
+// 当弹窗关闭后显示成功消息（使用 ref 防止重复显示）
+// 只有当 hash 存在且弹窗已关闭时才显示成功消息
+useEffect(() => {
+  if (isSuccess && !isAddTokenOpen && !hasShownAddTokenSuccessRef.current && hash) {
     setAlertVariant('success');
     setAlertMsg('代币地址设置成功');
-    // 立即刷新 tokenAddress 查询，获取最新的链上数据
-    // isSuccess 表示交易已在链上确认，可以立即查询
-    refetchTokenAddress();
+    hasShownAddTokenSuccessRef.current = true;
   }
-}, [isSuccess, refetchTokenAddress, onAddTokenOpenChange]);
+}, [isSuccess, isAddTokenOpen, hash]);
+
+// 当开始新的设置代币地址时，重置成功消息标记
+useEffect(() => {
+  if (isAddTokenOpen) {
+    hasShownAddTokenSuccessRef.current = false;
+  }
+}, [isAddTokenOpen]);
 
 // 零地址（未设置代币地址时的默认值）
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
@@ -510,6 +526,7 @@ const {
   data: lockHash,
   isPending: isLockPending,
   isSuccess: isLockSuccess,
+  reset: resetLock,
 } = useWriteContract()
 
 const { isSuccess: approveSuccess } =
@@ -529,6 +546,11 @@ const amountBigInt = () => {
     if (!tokenAddress || !isValidAddress(String(tokenAddress))) {
       setAlertVariant('danger'); setAlertMsg('请先设置有效的代币地址'); return;
     }
+    // 重置锁仓相关状态
+    resetLock();
+    // 重置成功消息标记和清空之前的消息
+    hasShownLockSuccessRef.current = false;
+    setAlertMsg(null);
     setLockAmount('');
     onLockOpen();
   };
@@ -639,15 +661,27 @@ useEffect(() => {
 }, [approveSuccess, refetchAllowance]);
 
 
+// 使用 ref 防止重复显示成功消息
+const hasShownLockSuccessRef = useRef(false);
+
 // 锁仓交易成功后关闭弹窗
 useEffect(() => {
-  if (lockSuccess) {
+  if (lockSuccess && isLockOpen) {
     setLockAmount('');
-    onLockOpenChange();  // 仅在交易确认完成后关闭
+    onLockOpenChange();  // 关闭弹窗
+    hasShownLockSuccessRef.current = false; // 重置标记，准备显示成功消息
+  }
+}, [lockSuccess, isLockOpen, onLockOpenChange]);
+
+// 当弹窗关闭后显示成功消息（使用 ref 防止重复显示）
+// 只有当 lockHash 存在且弹窗已关闭时才显示成功消息
+useEffect(() => {
+  if (lockSuccess && !isLockOpen && !hasShownLockSuccessRef.current && lockHash) {
     setAlertVariant('success'); 
     setAlertMsg('锁仓转入交易已确认');
+    hasShownLockSuccessRef.current = true;
   }
-}, [lockSuccess]);
+}, [lockSuccess, isLockOpen, lockHash]);
 
 
 
@@ -903,15 +937,23 @@ useEffect(() => {
           <div className={styles.cardHeaderContent}>
             <h2 className={styles.cardTitle}>代币列表</h2>
             <div className={styles.buttonGroup}>
-              <Button 
-                color="primary" 
-                size="sm" 
-                onPress={onAddTokenOpen}
-                className={styles.actionButton}
-                isDisabled={!isConnected}
-              >
-                设置代币地址
-              </Button>
+                <Button 
+                  color="primary" 
+                  size="sm" 
+                  onPress={() => {
+                    // 重置状态
+                    reset();
+                    hasShownAddTokenSuccessRef.current = false;
+                    setAlertMsg(null);
+                    setNewTokenAddress('');
+                    // 打开弹窗
+                    onAddTokenOpen();
+                  }}
+                  className={styles.actionButton}
+                  isDisabled={!isConnected}
+                >
+                  设置代币地址
+                </Button>
               <Button 
                 color="primary" 
                 size="sm"
@@ -1031,8 +1073,8 @@ useEffect(() => {
             <>
               <ModalHeader className="flex flex-col gap-1">设置代币地址</ModalHeader>
               <ModalBody>
-                {/* 在弹窗内显示错误消息，优先级最高 */}
-                {alertMsg && (
+                {/* 在弹窗内显示错误消息，优先级最高（但不显示成功消息，成功消息在弹窗关闭后显示） */}
+                {alertMsg && alertVariant !== 'success' && (
                   <Alert
                     key={alertVariant}
                     color={alertVariant}
@@ -1080,8 +1122,8 @@ useEffect(() => {
               <>
                 <ModalHeader className="flex flex-col gap-1">锁仓转入</ModalHeader>
                 <ModalBody>
-                  {/* 在弹窗内显示错误消息，优先级最高 */}
-                  {alertMsg && (
+                  {/* 在弹窗内显示错误消息，优先级最高（但不显示成功消息，成功消息在弹窗关闭后显示） */}
+                  {alertMsg && alertVariant !== 'success' && (
                     <Alert
                       key={alertVariant}
                       color={alertVariant}
