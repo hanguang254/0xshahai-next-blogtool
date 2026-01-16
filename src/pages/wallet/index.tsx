@@ -1067,7 +1067,7 @@ useEffect(() => {
       </Card>
 
       {/* 添加代币地址 Modal */}
-      <Modal isOpen={isAddTokenOpen} onOpenChange={onAddTokenOpenChange} placement="center">
+      <Modal isOpen={isAddTokenOpen} onOpenChange={onAddTokenOpenChange} isDismissable={false} placement="center">
         <ModalContent>
           {(onClose) => (
             <>
@@ -1116,7 +1116,7 @@ useEffect(() => {
       </Modal>
 
         {/* 锁仓转入 Modal */}
-        <Modal isOpen={isLockOpen} onOpenChange={onLockOpenChange} placement="center">
+        <Modal isOpen={isLockOpen} onOpenChange={onLockOpenChange} isDismissable={false} placement="center">
           <ModalContent>
             {(onClose) => (
               <>
@@ -1220,7 +1220,7 @@ useEffect(() => {
         </Modal>
 
       {/* 发起转账 Modal */}
-      <Modal isOpen={isTransferOpen} onOpenChange={onTransferOpenChange} placement="center" size="lg">
+      <Modal isOpen={isTransferOpen} onOpenChange={onTransferOpenChange} isDismissable={false} placement="center" size="lg">
         <ModalContent>
           {(onClose) => (
             <>
