@@ -424,14 +424,24 @@ const {
 })
 console.log('tokenAddress', tokenAddress);
 
+// 零地址（未设置代币地址时的默认值）
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
+// 检查代币地址是否有效（不是零地址且不为空）
+const isValidTokenAddress = useMemo(() => {
+  if (!tokenAddress) return false;
+  const addr = String(tokenAddress).toLowerCase();
+  return addr !== ZERO_ADDRESS.toLowerCase() && addr !== '0x0';
+}, [tokenAddress]);
+
 // 过滤出与合约设置的代币地址匹配的代币（用于转账）
 const transferableTokens = useMemo(() => {
-  if (!tokenAddress) return [];
+  if (!tokenAddress || !isValidTokenAddress) return [];
   const tokenAddr = String(tokenAddress).toLowerCase();
   return tokens.filter(token => 
     String(token.contractAddress).toLowerCase() === tokenAddr
   );
-}, [tokens, tokenAddress]);
+}, [tokens, tokenAddress, isValidTokenAddress]);
 
 // 查询部分合约信息（基于合约返回的 tokenAddress）
 const {data: allowance,isPending: isReadPending,error: readError,} = useReadContract({
@@ -1071,7 +1081,9 @@ useEffect(() => {
                   </div>
 
                   <div className="text-sm text-default-600">
-                    <div>当前代币地址: {String(tokenAddress) || '未设置'}</div>
+                    <div>当前代币地址: {tokenAddress && isValidTokenAddress 
+                      ? String(tokenAddress) 
+                      : (tokenAddress ? ZERO_ADDRESS : '未设置')}</div>
                     <div>当前授权: {allowance 
                       ? (BigInt(allowance as any) === MAX_UINT256 ? '无限制' : formatUnits(allowance as any, 18))
                       : '0'}
@@ -1088,30 +1100,50 @@ useEffect(() => {
                       : '未设置'}
                       </div>
                   </div>
+                  
+                  {/* 如果代币地址无效，显示提示 */}
+                  {!isValidTokenAddress && (
+                    <Alert
+                      color="warning"
+                      variant="flat"
+                      title="请先设置代币地址"
+                      description="代币地址为默认值（零地址），请先在代币列表页面设置有效的代币地址"
+                      className="mt-4"
+                    />
+                  )}
                 </ModalBody>
                 <ModalFooter>
                   <Button color="danger" variant="light" onPress={onClose}>
                     取消
                   </Button>
-                  <Button
-                    color="primary"
-                    onPress={handleApproveOrLock}
-                    isLoading={
-                      needsApproval
-                        ? (isApprovePending || (approveHash && !approveSuccess))
-                        : (isLockPending || (lockHash && !lockSuccess))
-                    }
-                    isDisabled={
-                      !tokenAddress ||
-                      (needsApproval
-                        ? (isApprovePending && !approveSuccess)
-                        : (!lockAmount || Number(lockAmount) <= 0 || (lockHash && !lockSuccess)))
-                    }
+                  <Tooltip
+                    content={!isValidTokenAddress ? '请先设置代币地址' : ''}
+                    isDisabled={isValidTokenAddress}
+                    delay={0}
+                    closeDelay={0}
                   >
-                    {needsApproval
-                      ? (approveSuccess ? '授权成功' : '授权合约')
-                      : '确认锁仓'}
-                  </Button>
+                    <div>
+                      <Button
+                        color="primary"
+                        onPress={handleApproveOrLock}
+                        isLoading={
+                          needsApproval
+                            ? (isApprovePending || (approveHash && !approveSuccess))
+                            : (isLockPending || (lockHash && !lockSuccess))
+                        }
+                        isDisabled={
+                          !isValidTokenAddress ||
+                          (needsApproval
+                            ? (isApprovePending && !approveSuccess)
+                            : (!lockAmount || Number(lockAmount) <= 0 || (lockHash && !lockSuccess)))
+                        }
+                      >
+                        {needsApproval
+                          ? (approveSuccess ? '授权成功' : '授权合约')
+                          : '确认锁仓'}
+                      </Button>
+                    </div>
+                  </Tooltip>
                 </ModalFooter>
               </>
             )}
