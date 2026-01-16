@@ -374,14 +374,7 @@ export default function Wallet() {
       sendAddTokenTransactionRef.current();
     }
   }, [chainId, pendingAddToken]);
-useEffect(() => {
-    if (isSuccess) {
-      setTokens(prev => [...prev, { contractAddress: newTokenAddress, amount: '0.00', balancePrice: '$0.00', symbol: 'NEW', decimals: 18 }]);
-      setNewTokenAddress('');
-      onAddTokenOpenChange();
-      setAlertVariant('success'); setAlertMsg('代币地址添加成功');
-    }
-  }, [isSuccess]);
+// 设置成功后的处理将在 tokenAddress 定义后添加
 
 
 // 锁仓转入逻辑
@@ -391,11 +384,18 @@ const {
   data: tokenAddress,
   isPending: isTokenAddressPending,
   error: tokenAddressError,
-  refetch,
+  refetch: refetchTokenAddress,
 } = useReadContract({
   address: CONTRACT_ADDRESS,
   abi: wallet_abi,
   functionName: 'TokenAddress',
+  query: {
+    // 优化查询配置，加快刷新速度
+    staleTime: 0, // 不使用缓存，总是获取最新数据
+    gcTime: 5000, // 5秒后清除缓存
+    refetchOnWindowFocus: true, // 窗口聚焦时自动刷新
+    refetchInterval: 3000, // 每3秒自动刷新一次
+  },
 })
 console.log('tokenAddress', tokenAddress);
 
@@ -465,7 +465,7 @@ const {data: allowance,isPending: isReadPending,error: readError,} = useReadCont
   query: {
     enabled: Boolean(address && tokenAddress),
     // 优化查询配置
-    staleTime: 3000, // 10秒内使用缓存数据，减少重复查询
+    staleTime: 0, // 10秒内使用缓存数据，减少重复查询
     gcTime: 10000, // 30秒后清除缓存
     refetchOnWindowFocus: false, // 窗口聚焦时不自动重新查询
     retry: 2, // 失败时重试2次
