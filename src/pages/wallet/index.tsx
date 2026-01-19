@@ -39,6 +39,7 @@ const CopyIcon = () => (
 interface Token {
   contractAddress: string;
   amount: string;
+  balanceValue: string;
   marketCap: string;
   priceChange24h: string;
   symbol?: string;
@@ -172,8 +173,8 @@ export default function Wallet() {
     }
   };
 
-  // 获取代币市值和涨跌幅（使用 DexScreener API）
-  const fetchTokenMarketData = async (contractAddress: string, delay: number = 0): Promise<{ marketCap: number | null; priceChange24h: number | null }> => {
+  // 获取代币市值、价格和涨跌幅（使用 DexScreener API）
+  const fetchTokenMarketData = async (contractAddress: string, delay: number = 0): Promise<{ priceUsd: number | null; marketCap: number | null; priceChange24h: number | null }> => {
     if (delay > 0) {
       await new Promise(resolve => setTimeout(resolve, delay));
     }
@@ -192,7 +193,7 @@ export default function Wallet() {
       
       if (!response.ok) {
         console.error(`获取市场数据失败 ${contractAddress}:`, response.statusText);
-        return { marketCap: null, priceChange24h: null };
+        return { priceUsd: null, marketCap: null, priceChange24h: null };
       }
       
       const json = await response.json();
@@ -203,16 +204,17 @@ export default function Wallet() {
       
       if (!bscPair) {
         console.warn(`未找到交易对数据 ${contractAddress}`);
-        return { marketCap: null, priceChange24h: null };
+        return { priceUsd: null, marketCap: null, priceChange24h: null };
       }
       
+      const priceUsd = bscPair.priceUsd ? parseFloat(bscPair.priceUsd) : null;
       const marketCap = bscPair.marketCap || bscPair.fdv || null;
       const priceChange24h = bscPair.priceChange?.h24 || null;
       
-      return { marketCap, priceChange24h };
+      return { priceUsd, marketCap, priceChange24h };
     } catch (err) {
       console.error(`获取市场数据错误 ${contractAddress}:`, err);
-      return { marketCap: null, priceChange24h: null };
+      return { priceUsd: null, marketCap: null, priceChange24h: null };
     }
   };
 
@@ -271,9 +273,16 @@ export default function Wallet() {
           // 格式化余额
           const amount = formatHexBalance(balance, decimals);
           
-          // 获取市值和涨跌幅数据（带延迟以控制 API 频率）
+          // 获取价格、市值和涨跌幅数据（带延迟以控制 API 频率）
           const delay = i * REQUEST_INTERVAL; // 第一个请求立即执行，后续逐步延迟
-          const { marketCap, priceChange24h } = await fetchTokenMarketData(contractAddress, delay);
+          const { priceUsd, marketCap, priceChange24h } = await fetchTokenMarketData(contractAddress, delay);
+          
+          // 计算余额价值（代币数量 × 单价）
+          const amountNum = parseFloat((amount || '0').replace(/,/g, '')); // 去掉格式化的逗号
+          const balanceValueUsd = priceUsd && amountNum > 0 ? amountNum * priceUsd : 0;
+          const balanceValueFormatted = balanceValueUsd > 0
+            ? formatMarketCap(balanceValueUsd)
+            : '$0.00';
           
           // 格式化市值（使用 K、M、B、T 单位）
           const marketCapFormatted = marketCap && marketCap > 0
@@ -288,6 +297,7 @@ export default function Wallet() {
           mapped.push({
             contractAddress,
             amount: amount || '0',
+            balanceValue: balanceValueFormatted,
             marketCap: marketCapFormatted,
             priceChange24h: priceChange24hFormatted,
             symbol,
@@ -1059,6 +1069,7 @@ useEffect(() => {
                       <TableColumn>代币合约地址</TableColumn>
                       <TableColumn>代币符号</TableColumn>
                       <TableColumn>代币数量</TableColumn>
+                      <TableColumn>余额价值</TableColumn>
                       <TableColumn>市值</TableColumn>
                       <TableColumn>24小时涨跌幅</TableColumn>
                     </TableHeader>
@@ -1098,6 +1109,7 @@ useEffect(() => {
                                   </Chip>
                                 </TableCell>
                                 <TableCell>{token.amount || '0.00'}</TableCell>
+                                <TableCell className={styles.priceCell}>{token.balanceValue || '$0.00'}</TableCell>
                                 <TableCell className={styles.priceCell}>{token.marketCap || 'N/A'}</TableCell>
                                 <TableCell>
                                   <span style={{ 
@@ -1117,6 +1129,7 @@ useEffect(() => {
                               {searchQuery && searchQuery.trim() ? '未找到匹配的代币' : '暂无代币数据'}
                             </div>
                           </TableCell>
+                          <TableCell>{null}</TableCell>
                           <TableCell>{null}</TableCell>
                           <TableCell>{null}</TableCell>
                           <TableCell>{null}</TableCell>
