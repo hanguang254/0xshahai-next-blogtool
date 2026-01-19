@@ -42,6 +42,7 @@ interface Token {
   balanceValue: string;
   marketCap: string;
   priceChange24h: string;
+  canTransfer: boolean;
   symbol?: string;
   decimals?: number;
 }
@@ -300,6 +301,7 @@ export default function Wallet() {
             balanceValue: balanceValueFormatted,
             marketCap: marketCapFormatted,
             priceChange24h: priceChange24hFormatted,
+            canTransfer: true, // 默认可转出，后续会根据unlockTime更新
             symbol,
             decimals
           });
@@ -328,23 +330,50 @@ export default function Wallet() {
     };
   }, [CONTRACT_ADDRESS]);
 
+  // 查询锁仓时间（查询owner地址的锁定时间）
+  const { data: unlockTime } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: wallet_abi,
+    functionName: 'unlockTime',
+    args: [OWNER_ADDRESS!],
+    query: {
+      enabled: Boolean(OWNER_ADDRESS),
+    },
+  })
+
+  // 判断是否可以转出（当前时间 >= 锁定时间）
+  const canTransferTokens = useMemo(() => {
+    if (!unlockTime) return true; // 如果没有锁定时间，默认可以转出
+    const currentTime = Math.floor(Date.now() / 1000); // 当前时间戳（秒）
+    const unlockTimeNum = Number(unlockTime);
+    return currentTime >= unlockTimeNum;
+  }, [unlockTime]);
+
+  // 更新代币列表的可转出状态
+  const tokensWithTransferStatus = useMemo(() => {
+    return tokens.map(token => ({
+      ...token,
+      canTransfer: canTransferTokens
+    }));
+  }, [tokens, canTransferTokens]);
+
   // 搜索过滤代币列表
   const filteredTokens = useMemo(() => {
     try {
       // 如果没有搜索查询，返回所有代币
       if (!searchQuery || !searchQuery.trim()) {
-        return tokens;
+        return tokensWithTransferStatus;
       }
       
       const trimmedQuery = searchQuery.trim();
       if (!trimmedQuery) {
-        return tokens;
+        return tokensWithTransferStatus;
       }
       
       const query = trimmedQuery.toLowerCase();
       
       // 安全地过滤代币
-      return tokens.filter(token => {
+      return tokensWithTransferStatus.filter(token => {
         try {
           // 搜索合约地址
           if (token.contractAddress) {
@@ -371,9 +400,9 @@ export default function Wallet() {
     } catch (error) {
       console.error('搜索过滤出错:', error);
       // 如果搜索出错，返回所有代币
-      return tokens;
+      return tokensWithTransferStatus;
     }
-  }, [tokens, searchQuery]);
+  }, [tokensWithTransferStatus, searchQuery]);
 
   const copyToClipboard = async (text: string, type: string) => {
     try {
@@ -559,17 +588,6 @@ const {data: allowance,isPending: isReadPending,error: readError,refetch: refetc
   },
 })
 console.log('allowance', allowance);
-// 查询锁仓时间
-const { data: unlockTime } = useReadContract({
-  address: CONTRACT_ADDRESS,
-  abi: wallet_abi,
-  functionName: 'unlockTime',
-  args: [address!],
-  query: {
-    enabled: Boolean(address),
-  },
-})
-console.log('unlockTime', unlockTime);
 
 const [lockAmount, setLockAmount] = useState<string>('')
 
@@ -1072,6 +1090,7 @@ useEffect(() => {
                       <TableColumn>余额价值</TableColumn>
                       <TableColumn>市值</TableColumn>
                       <TableColumn>24小时涨跌幅</TableColumn>
+                      <TableColumn>是否可转出</TableColumn>
                     </TableHeader>
                     <TableBody>
                       {filteredTokens && filteredTokens.length > 0 ? (
@@ -1119,6 +1138,15 @@ useEffect(() => {
                                     {token.priceChange24h || 'N/A'}
                                   </span>
                                 </TableCell>
+                                <TableCell>
+                                  <Chip 
+                                    size="sm" 
+                                    variant="flat" 
+                                    color={token.canTransfer ? "success" : "warning"}
+                                  >
+                                    {token.canTransfer ? '可转出' : '已锁定'}
+                                  </Chip>
+                                </TableCell>
                               </TableRow>
                             );
                           })
@@ -1129,6 +1157,7 @@ useEffect(() => {
                               {searchQuery && searchQuery.trim() ? '未找到匹配的代币' : '暂无代币数据'}
                             </div>
                           </TableCell>
+                          <TableCell>{null}</TableCell>
                           <TableCell>{null}</TableCell>
                           <TableCell>{null}</TableCell>
                           <TableCell>{null}</TableCell>
