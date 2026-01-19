@@ -39,7 +39,8 @@ const CopyIcon = () => (
 interface Token {
   contractAddress: string;
   amount: string;
-  balancePrice: string;
+  marketCap: string;
+  priceChange24h: string;
   symbol?: string;
   decimals?: number;
 }
@@ -91,8 +92,9 @@ export default function Wallet() {
   const CHAINBASE_ENDPOINT = 'https://api.chainbase.online/v1';
   // BSC 链 ID (根据 Chainbase 文档，BSC 的 chain_id 是 56)
   const CHAIN_ID = '56';
-  // 请求频率限制：每秒2次 = 每500ms一次
-  const REQUEST_INTERVAL = 300;
+  // DexScreener API 请求频率限制：每分钟300次 = 每秒5次 = 每200ms一次
+  // 设置为 250ms 以保留安全边际
+  const REQUEST_INTERVAL = 250;
 
   // 代币列表（由 Chainbase 接口获取）
   const [tokens, setTokens] = useState<Token[]>([]);
@@ -111,6 +113,36 @@ export default function Wallet() {
       return formatted;
     } catch (err) {
       return String(raw);
+    }
+  };
+
+  // 市值格式化（使用 K、M、B、T 单位）
+  const formatMarketCap = (value: number): string => {
+    try {
+      if (value == null || isNaN(value)) return 'N/A';
+      
+      const abs = Math.abs(value);
+      
+      // 万亿 (Trillion)
+      if (abs >= 1e12) {
+        return `$${(value / 1e12).toFixed(2)}T`;
+      }
+      // 十亿 (Billion)
+      if (abs >= 1e9) {
+        return `$${(value / 1e9).toFixed(2)}B`;
+      }
+      // 百万 (Million)
+      if (abs >= 1e6) {
+        return `$${(value / 1e6).toFixed(2)}M`;
+      }
+      // 千 (Thousand)
+      if (abs >= 1e3) {
+        return `$${(value / 1e3).toFixed(2)}K`;
+      }
+      // 小于 1000，直接显示
+      return `$${value.toFixed(2)}`;
+    } catch (err) {
+      return 'N/A';
     }
   };
 
@@ -140,34 +172,47 @@ export default function Wallet() {
     }
   };
 
-  // 获取代币价格（带频率限制）
-  const fetchTokenPrice = async (contractAddress: string, delay: number = 0): Promise<number | null> => {
+  // 获取代币市值和涨跌幅（使用 DexScreener API）
+  const fetchTokenMarketData = async (contractAddress: string, delay: number = 0): Promise<{ marketCap: number | null; priceChange24h: number | null }> => {
     if (delay > 0) {
       await new Promise(resolve => setTimeout(resolve, delay));
     }
     
     try {
+      // DexScreener API: bsc 链的 chainId 是 'bsc'
       const response = await fetch(
-        `${CHAINBASE_ENDPOINT}/token/price?chain_id=${CHAIN_ID}&contract_address=${contractAddress}`,
+        `https://api.dexscreener.com/latest/dex/tokens/${contractAddress}`,
         {
           method: 'GET',
           headers: {
-            'x-api-key': CHAINBASE_API_KEY,
             'accept': 'application/json'
           }
         }
       );
       
       if (!response.ok) {
-        console.error(`获取价格失败 ${contractAddress}:`, response.statusText);
-        return null;
+        console.error(`获取市场数据失败 ${contractAddress}:`, response.statusText);
+        return { marketCap: null, priceChange24h: null };
       }
       
       const json = await response.json();
-      return json.data?.price || null;
+      
+      // DexScreener 返回的是交易对列表，我们取第一个 BSC 链上的交易对
+      const pairs = json.pairs || [];
+      const bscPair = pairs.find((pair: any) => pair.chainId === 'bsc') || pairs[0];
+      
+      if (!bscPair) {
+        console.warn(`未找到交易对数据 ${contractAddress}`);
+        return { marketCap: null, priceChange24h: null };
+      }
+      
+      const marketCap = bscPair.marketCap || bscPair.fdv || null;
+      const priceChange24h = bscPair.priceChange?.h24 || null;
+      
+      return { marketCap, priceChange24h };
     } catch (err) {
-      console.error(`获取价格错误 ${contractAddress}:`, err);
-      return null;
+      console.error(`获取市场数据错误 ${contractAddress}:`, err);
+      return { marketCap: null, priceChange24h: null };
     }
   };
 
@@ -213,8 +258,8 @@ export default function Wallet() {
           return;
         }
 
-        // 第二步：为每个代币获取价格（控制频率：每秒2次 = 每500ms一次）
-        // 第一个价格请求需要在获取代币列表后等待，以符合频率限制
+        // 第二步：为每个代币获取市值和涨跌幅数据
+        // DexScreener API 限制：每分钟 300 次请求，设置为每 250ms 一次（每秒 4 次）
         const mapped: Token[] = [];
         for (let i = 0; i < tokensData.length; i++) {
           const token = tokensData[i];
@@ -226,19 +271,25 @@ export default function Wallet() {
           // 格式化余额
           const amount = formatHexBalance(balance, decimals);
           
-          // 获取价格（带延迟以控制频率：第一个请求延迟500ms，后续每个延迟500ms）
-          const delay = (i + 1) * REQUEST_INTERVAL;
-          const price = await fetchTokenPrice(contractAddress, delay);
+          // 获取市值和涨跌幅数据（带延迟以控制 API 频率）
+          const delay = i * REQUEST_INTERVAL; // 第一个请求立即执行，后续逐步延迟
+          const { marketCap, priceChange24h } = await fetchTokenMarketData(contractAddress, delay);
           
-          // 计算余额价格
-          const balancePrice = price && Number(amount) > 0
-            ? `$${(Number(amount) * price).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-            : '$0.00';
+          // 格式化市值（使用 K、M、B、T 单位）
+          const marketCapFormatted = marketCap && marketCap > 0
+            ? formatMarketCap(marketCap)
+            : 'N/A';
+          
+          // 格式化涨跌幅
+          const priceChange24hFormatted = priceChange24h != null
+            ? `${priceChange24h >= 0 ? '+' : ''}${priceChange24h.toFixed(2)}%`
+            : 'N/A';
 
           mapped.push({
             contractAddress,
             amount: amount || '0',
-            balancePrice,
+            marketCap: marketCapFormatted,
+            priceChange24h: priceChange24hFormatted,
             symbol,
             decimals
           });
@@ -1008,41 +1059,57 @@ useEffect(() => {
                       <TableColumn>代币合约地址</TableColumn>
                       <TableColumn>代币符号</TableColumn>
                       <TableColumn>代币数量</TableColumn>
-                      <TableColumn>代币余额价格</TableColumn>
+                      <TableColumn>市值</TableColumn>
+                      <TableColumn>24小时涨跌幅</TableColumn>
                     </TableHeader>
                     <TableBody>
                       {filteredTokens && filteredTokens.length > 0 ? (
                         filteredTokens
                           .filter(token => token != null)
-                          .map((token, index) => (
-                            <TableRow key={`${token.symbol || token.contractAddress}-${index}`}>
-                              <TableCell>
-                                <div className={styles.addressCell}>
-                                  <code className={styles.contractAddress}>
-                                    {formatAddress(String(token.contractAddress || token.symbol || ''))}
-                                  </code>
-                                  <Tooltip content={copied === `token-${index}` ? '已复制!' : '点击复制完整地址'}>
-                                    <Button
-                                      isIconOnly
-                                      variant="light"
-                                      size="sm"
-                                      onPress={() => copyToClipboard(String(token.contractAddress || token.symbol || ''), `token-${index}`)}
-                                      className={styles.copyButton}
-                                    >
-                                      <CopyIcon />
-                                    </Button>
-                                  </Tooltip>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Chip size="sm" variant="flat" color="primary">
-                                  {token.symbol || 'N/A'}
-                                </Chip>
-                              </TableCell>
-                              <TableCell>{token.amount || '0.00'}</TableCell>
-                              <TableCell className={styles.priceCell}>{token.balancePrice || '$0.00'}</TableCell>
-                            </TableRow>
-                          ))
+                          .map((token, index) => {
+                            // 判断涨跌幅是正还是负，用于颜色显示
+                            const priceChangeValue = parseFloat(token.priceChange24h);
+                            const isPositive = !isNaN(priceChangeValue) && priceChangeValue >= 0;
+                            const isNegative = !isNaN(priceChangeValue) && priceChangeValue < 0;
+                            
+                            return (
+                              <TableRow key={`${token.symbol || token.contractAddress}-${index}`}>
+                                <TableCell>
+                                  <div className={styles.addressCell}>
+                                    <code className={styles.contractAddress}>
+                                      {formatAddress(String(token.contractAddress || token.symbol || ''))}
+                                    </code>
+                                    <Tooltip content={copied === `token-${index}` ? '已复制!' : '点击复制完整地址'}>
+                                      <Button
+                                        isIconOnly
+                                        variant="light"
+                                        size="sm"
+                                        onPress={() => copyToClipboard(String(token.contractAddress || token.symbol || ''), `token-${index}`)}
+                                        className={styles.copyButton}
+                                      >
+                                        <CopyIcon />
+                                      </Button>
+                                    </Tooltip>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Chip size="sm" variant="flat" color="primary">
+                                    {token.symbol || 'N/A'}
+                                  </Chip>
+                                </TableCell>
+                                <TableCell>{token.amount || '0.00'}</TableCell>
+                                <TableCell className={styles.priceCell}>{token.marketCap || 'N/A'}</TableCell>
+                                <TableCell>
+                                  <span style={{ 
+                                    color: isPositive ? '#17c964' : isNegative ? '#f31260' : 'inherit',
+                                    fontWeight: '500'
+                                  }}>
+                                    {token.priceChange24h || 'N/A'}
+                                  </span>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
                       ) : (
                         <TableRow>
                           <TableCell>
@@ -1050,6 +1117,7 @@ useEffect(() => {
                               {searchQuery && searchQuery.trim() ? '未找到匹配的代币' : '暂无代币数据'}
                             </div>
                           </TableCell>
+                          <TableCell>{null}</TableCell>
                           <TableCell>{null}</TableCell>
                           <TableCell>{null}</TableCell>
                           <TableCell>{null}</TableCell>
