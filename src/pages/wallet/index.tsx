@@ -1221,27 +1221,12 @@ useEffect(() => {
               <>
                 <ModalHeader className="flex flex-col gap-1">锁仓转入</ModalHeader>
                 <ModalBody>
-                  {/* 在弹窗内显示错误消息 */}
-                  {alertMsg && alertVariant !== 'success' && (
-                    <Alert
-                      key={alertVariant}
-                      color={alertVariant}
-                      title={alertMsg}
-                      variant="flat"
-                      onClose={() => setAlertMsg(null)}
-                      className="mb-4 z-50"
-                      classNames={{
-                        base: "z-50"
-                      }}
-                    />
-                  )}
-                  
                   <Input
                     label="代币合约地址"
                     placeholder="0x..."
                     value={lockTokenAddress}
                     onChange={(e) => setLockTokenAddress(e.target.value)}
-                    description="请输入要锁仓的代币合约地址，或点击下方从列表选择"
+                    description="请输入要锁仓的代币合约地址"
                     isInvalid={lockTokenAddress !== '' && !isValidAddress(lockTokenAddress)}
                     errorMessage={lockTokenAddress !== '' && !isValidAddress(lockTokenAddress) ? '无效的地址格式' : ''}
                     endContent={
@@ -1256,35 +1241,6 @@ useEffect(() => {
                       </Button>
                     }
                   />
-
-                  {/* 从现有代币列表快速选择 */}
-                  {tokens.length > 0 && (
-                    <div>
-                      <label className="text-sm text-default-600 mb-2 block">或从已有代币中选择：</label>
-                      <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-default-50 rounded-lg">
-                        {tokens.slice(0, 20).map((token, index) => (
-                          <Chip
-                            key={index}
-                            size="sm"
-                            variant={lockTokenAddress === token.contractAddress ? "solid" : "bordered"}
-                            color={lockTokenAddress === token.contractAddress ? "primary" : "default"}
-                            className="cursor-pointer"
-                            onClick={() => {
-                              setLockTokenAddress(token.contractAddress);
-                              if (token.decimals) {
-                                setLockTokenDecimals(String(token.decimals));
-                              }
-                              setAlertVariant('success');
-                              setAlertMsg(`已选择 ${token.symbol || 'Unknown'}`);
-                              setTimeout(() => setAlertMsg(null), 2000);
-                            }}
-                          >
-                            {token.symbol || 'N/A'}
-                          </Chip>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   <Input
                     label="代币精度 (Decimals)"
@@ -1384,21 +1340,6 @@ useEffect(() => {
                 提取已解锁代币
               </ModalHeader>
               <ModalBody>
-                {/* 在弹窗内显示错误消息 */}
-                {alertMsg && alertVariant !== 'success' && (
-                  <Alert
-                    key={alertVariant}
-                    color={alertVariant}
-                    title={alertMsg}
-                    variant="flat"
-                    onClose={() => setAlertMsg(null)}
-                    className="mb-4 z-50"
-                    classNames={{
-                      base: "z-50"
-                    }}
-                  />
-                )}
-                
                 <div>
                   <label className="text-sm text-default-600 mb-2 block">选择代币</label>
                   <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
@@ -1448,26 +1389,7 @@ useEffect(() => {
                       
                       // 没有锁定记录
                       if (locked === 0) {
-                        return (
-                          <Alert
-                            color="danger"
-                            variant="flat"
-                            title="❌ 无法提取"
-                            description={
-                              <div className="space-y-1">
-                                <div>该代币没有通过&ldquo;锁仓转入&rdquo;功能存入合约。</div>
-                                <div className="text-xs mt-2">
-                                  <strong>说明：</strong> 
-                                  <ul className="list-disc list-inside mt-1">
-                                    <li>只能提取通过&ldquo;锁仓转入&rdquo;功能存入的代币</li>
-                                    <li>直接转账到合约的代币无法通过此功能提取</li>
-                                    <li>请联系合约 owner 使用 owner 权限提取</li>
-                                  </ul>
-                                </div>
-                              </div>
-                            }
-                          />
-                        );
+                        return null;
                       }
                       
                       const lockedAmountFormatted = formatAmount(Number(formatUnits(BigInt(locked), decimals)));
@@ -1484,37 +1406,21 @@ useEffect(() => {
                         });
                         
                         return (
-                          <>
-                            <div className="text-sm text-default-600 space-y-1 p-3 bg-default-100 rounded-lg">
-                              <div>🔒 锁定状态: <span className="text-warning font-semibold">已锁定</span></div>
-                              <div>📦 可提取数量: {lockedAmountFormatted}</div>
-                              <div>⏰ 解锁时间: {unlockDate}</div>
-                              <div>⏳ 剩余时间: {Number(remainingTime)} 秒</div>
-                            </div>
-                            <Alert
-                              color="warning"
-                              variant="flat"
-                              title="⚠️ 代币仍在锁定期内"
-                              description="该代币尚未到达解锁时间，无法提取。请等待解锁时间到达后再试。"
-                            />
-                          </>
+                          <div className="text-sm text-default-600 space-y-1 p-3 bg-default-100 rounded-lg">
+                            <div>🔒 锁定状态: <span className="text-warning font-semibold">已锁定</span></div>
+                            <div>📦 可提取数量: {lockedAmountFormatted}</div>
+                            <div>⏰ 解锁时间: {unlockDate}</div>
+                            <div>⏳ 剩余时间: {Number(remainingTime)} 秒</div>
+                          </div>
                         );
                       }
                       
                       // 已解锁，可以提取
                       return (
-                        <>
-                          <div className="text-sm text-success-600 space-y-1 p-3 bg-success-50 rounded-lg">
-                            <div>✅ 锁定状态: <span className="font-semibold">已解锁</span></div>
-                            <div>📦 可提取数量: {lockedAmountFormatted}</div>
-                          </div>
-                          <Alert
-                            color="success"
-                            variant="flat"
-                            title="✅ 可以提取"
-                            description="该代币已解锁，可以正常提取。"
-                          />
-                        </>
+                        <div className="text-sm text-success-600 space-y-1 p-3 bg-success-50 rounded-lg">
+                          <div>✅ 锁定状态: <span className="font-semibold">已解锁</span></div>
+                          <div>📦 可提取数量: {lockedAmountFormatted}</div>
+                        </div>
                       );
                     })()}
                   </>
