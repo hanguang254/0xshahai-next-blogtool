@@ -531,6 +531,28 @@ export default function Wallet() {
     }
   };
 
+  // 从剪贴板粘贴地址
+  const pasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && isValidAddress(text.trim())) {
+        setLockTokenAddress(text.trim());
+        setAlertVariant('success');
+        setAlertMsg('已粘贴合约地址');
+        setTimeout(() => setAlertMsg(null), 2000);
+      } else {
+        setAlertVariant('warning');
+        setAlertMsg('剪贴板中没有有效的合约地址');
+        setTimeout(() => setAlertMsg(null), 2000);
+      }
+    } catch (err) {
+      console.error('粘贴失败:', err);
+      setAlertVariant('danger');
+      setAlertMsg('读取剪贴板失败，请手动粘贴');
+      setTimeout(() => setAlertMsg(null), 2000);
+    }
+  };
+
   const formatAddress = (address: string) => {
     if (!address) return '';
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -1219,10 +1241,50 @@ useEffect(() => {
                     placeholder="0x..."
                     value={lockTokenAddress}
                     onChange={(e) => setLockTokenAddress(e.target.value)}
-                    description="请输入要锁仓的代币合约地址"
+                    description="请输入要锁仓的代币合约地址，或点击下方从列表选择"
                     isInvalid={lockTokenAddress !== '' && !isValidAddress(lockTokenAddress)}
                     errorMessage={lockTokenAddress !== '' && !isValidAddress(lockTokenAddress) ? '无效的地址格式' : ''}
+                    endContent={
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        color="primary"
+                        onPress={pasteFromClipboard}
+                        className="min-w-unit-16"
+                      >
+                        粘贴
+                      </Button>
+                    }
                   />
+
+                  {/* 从现有代币列表快速选择 */}
+                  {tokens.length > 0 && (
+                    <div>
+                      <label className="text-sm text-default-600 mb-2 block">或从已有代币中选择：</label>
+                      <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-default-50 rounded-lg">
+                        {tokens.slice(0, 20).map((token, index) => (
+                          <Chip
+                            key={index}
+                            size="sm"
+                            variant={lockTokenAddress === token.contractAddress ? "solid" : "bordered"}
+                            color={lockTokenAddress === token.contractAddress ? "primary" : "default"}
+                            className="cursor-pointer"
+                            onClick={() => {
+                              setLockTokenAddress(token.contractAddress);
+                              if (token.decimals) {
+                                setLockTokenDecimals(String(token.decimals));
+                              }
+                              setAlertVariant('success');
+                              setAlertMsg(`已选择 ${token.symbol || 'Unknown'}`);
+                              setTimeout(() => setAlertMsg(null), 2000);
+                            }}
+                          >
+                            {token.symbol || 'N/A'}
+                          </Chip>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <Input
                     label="代币精度 (Decimals)"
