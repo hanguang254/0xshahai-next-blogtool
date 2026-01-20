@@ -73,7 +73,7 @@ export default function Wallet() {
   const [alertVariant, setAlertVariant] = useState<'primary' | 'success' | 'danger' | 'warning'>('primary');
   
   // 锁仓天数
-  const [lockDays, setLockDays] = useState<string>('30');
+  const [lockDays, setLockDays] = useState<string>('7');
 
   // 静态显示的合约钱包地址
   const CONTRACT_ADDRESS = '0x344f1c033Ee37860eEe2CA2873320e08c3fc21c9';
