@@ -1381,11 +1381,11 @@ useEffect(() => {
                             title="❌ 无法提取"
                             description={
                               <div className="space-y-1">
-                                <div>该代币没有通过"锁仓转入"功能存入合约。</div>
+                                <div>该代币没有通过&ldquo;锁仓转入&rdquo;功能存入合约。</div>
                                 <div className="text-xs mt-2">
                                   <strong>说明：</strong> 
                                   <ul className="list-disc list-inside mt-1">
-                                    <li>只能提取通过"锁仓转入"功能存入的代币</li>
+                                    <li>只能提取通过&ldquo;锁仓转入&rdquo;功能存入的代币</li>
                                     <li>直接转账到合约的代币无法通过此功能提取</li>
                                     <li>请联系合约 owner 使用 owner 权限提取</li>
                                   </ul>
