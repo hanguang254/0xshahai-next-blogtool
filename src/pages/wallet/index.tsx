@@ -1236,7 +1236,7 @@ useEffect(() => {
                   
                   <Input
                     label="锁定天数"
-                    placeholder="30"
+                    placeholder="7"
                     value={lockDays}
                     onChange={(e) => setLockDays(e.target.value)}
                     description="代币将被锁定的天数"
