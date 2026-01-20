@@ -101,6 +101,7 @@ export default function Wallet() {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [isLoadingTokens, setIsLoadingTokens] = useState<boolean>(false);
   const [tokensError, setTokensError] = useState<string | null>(null);
+  const isFirstLoadRef = useRef<boolean>(true); // 使用 ref 标记是否首次加载，避免闭包问题
 
   // 通用数量格式化（处理小数、科学计数法等）
   const formatAmount = (raw: any) => {
@@ -229,7 +230,10 @@ export default function Wallet() {
       if (!CONTRACT_ADDRESS) return;
       try {
         if (mounted) {
-          setIsLoadingTokens(true);
+          // 只在首次加载时显示加载状态
+          if (isFirstLoadRef.current) {
+            setIsLoadingTokens(true);
+          }
           setTokensError(null);
         }
 
@@ -256,6 +260,8 @@ export default function Wallet() {
           if (mounted) {
             setTokens([]);
             setIsLoadingTokens(false);
+            // 首次加载完成后，标记为非首次加载
+            isFirstLoadRef.current = false;
           }
           return;
         }
@@ -306,7 +312,9 @@ export default function Wallet() {
           });
         }
 
-        if (mounted) setTokens(mapped);
+        if (mounted) {
+          setTokens(mapped);
+        }
       } catch (err) {
         if ((err as any)?.name === 'AbortError') return;
         console.error('Fetch Chainbase error:', err);
@@ -315,7 +323,11 @@ export default function Wallet() {
           setTokens([]);
         }
       } finally {
-        if (mounted) setIsLoadingTokens(false);
+        if (mounted) {
+          setIsLoadingTokens(false);
+          // 首次加载完成后，标记为非首次加载
+          isFirstLoadRef.current = false;
+        }
       }
     };
 
