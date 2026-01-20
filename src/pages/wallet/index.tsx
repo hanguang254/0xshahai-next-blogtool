@@ -333,7 +333,7 @@ export default function Wallet() {
   const [tokenLockStatus, setTokenLockStatus] = useState<Record<string, boolean>>({});
 
   // 使用自定义的高速 RPC 节点
-  const BSC_RPC_URL = 'https://api.zan.top/node/v1/bsc/mainnet/e7f93263291b4a79a83a9b5c0fe72048';
+  const BSC_RPC_URL = 'https://bnb-mainnet.g.alchemy.com/v2/cx_UaSly_yEW7f3t3jAEy';
 
   // 查询每个代币的锁定状态
   useEffect(() => {
