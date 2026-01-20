@@ -8,7 +8,7 @@ import { bsc } from 'wagmi/chains';
 import {wallet_abi} from '../../ABI/transferwallet';
 import {ERC_abi} from '../../ABI/IERC20';
 
-import { parseUnits, formatUnits } from 'viem'
+import { parseUnits, formatUnits, encodeFunctionData } from 'viem'
 
 // 复制图标 SVG
 const CopyIcon = () => (
@@ -58,26 +58,25 @@ export default function Wallet() {
   const { address, isConnected } = useAccount();
   const [copied, setCopied] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const { isOpen: isAddTokenOpen, onOpen: onAddTokenOpen, onOpenChange: onAddTokenOpenChange } = useDisclosure();
-  const { isOpen: isTransferOpen, onOpen: onTransferOpen, onOpenChange: onTransferOpenChange } = useDisclosure();
+  const { isOpen: isWithdrawOpen, onOpen: onWithdrawOpen, onOpenChange: onWithdrawOpenChange } = useDisclosure();
   const { isOpen: isLockOpen, onOpen: onLockOpen, onOpenChange: onLockOpenChange } = useDisclosure();
-  const [newTokenAddress, setNewTokenAddress] = useState<string>('');
   const [selectedToken, setSelectedToken] = useState<Token | null>(null);
-  const [transferAmount, setTransferAmount] = useState<string>('');
-  const [transferTo, setTransferTo] = useState<string>('');
+  const [withdrawAmount, setWithdrawAmount] = useState<string>('');
+  const [lockTokenAddress, setLockTokenAddress] = useState<string>('');
+  const [lockTokenDecimals, setLockTokenDecimals] = useState<string>('18');
 
   const chainId = useChainId();
   const { switchChain } = useSwitchChain();
 
-  // 标记是否正在等待网络切换后发送交易
-  const [pendingAddToken, setPendingAddToken] = useState<boolean>(false);
-
   // Alert 状态
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertVariant, setAlertVariant] = useState<'primary' | 'success' | 'danger' | 'warning'>('primary');
+  
+  // 锁仓天数
+  const [lockDays, setLockDays] = useState<string>('30');
 
   // 静态显示的合约钱包地址
-  const CONTRACT_ADDRESS = '0x7961d02eD51bDD9a76E83C99a4F359a512A087bC';
+  const CONTRACT_ADDRESS = '0x344f1c033Ee37860eEe2CA2873320e08c3fc21c9';
   const {
     data: ownerAddress, isPending: isOwnerPending, error: ownerError
   } = useReadContract({
@@ -330,32 +329,138 @@ export default function Wallet() {
     };
   }, [CONTRACT_ADDRESS]);
 
-  // 查询锁仓时间（查询owner地址的锁定时间）
-  const { data: unlockTime } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: wallet_abi,
-    functionName: 'unlockTime',
-    args: [OWNER_ADDRESS!],
-    query: {
-      enabled: Boolean(OWNER_ADDRESS),
-    },
-  })
+  // 存储每个代币的锁定状态（true=已锁定，false=未锁定）
+  const [tokenLockStatus, setTokenLockStatus] = useState<Record<string, boolean>>({});
 
-  // 判断是否可以转出（当前时间 >= 锁定时间）
-  const canTransferTokens = useMemo(() => {
-    if (!unlockTime) return true; // 如果没有锁定时间，默认可以转出
-    const currentTime = Math.floor(Date.now() / 1000); // 当前时间戳（秒）
-    const unlockTimeNum = Number(unlockTime);
-    return currentTime >= unlockTimeNum;
-  }, [unlockTime]);
+  // 使用自定义的高速 RPC 节点
+  const BSC_RPC_URL = 'https://api.zan.top/node/v1/bsc/mainnet/e7f93263291b4a79a83a9b5c0fe72048';
 
-  // 更新代币列表的可转出状态
+  // 查询每个代币的锁定状态
+  useEffect(() => {
+    if (!address || tokens.length === 0) return;
+
+    const fetchLockStatus = async () => {
+      const statusMap: Record<string, boolean> = {};
+
+      // console.log('🔍 开始查询代币锁定状态...');
+      // console.log('📍 合约地址:', CONTRACT_ADDRESS);
+      // console.log('👤 用户地址:', address);
+      // console.log('🪙 代币数量:', tokens.length);
+      // console.log('🚀 使用 RPC:', BSC_RPC_URL);
+
+      // 使用并发查询提高速度，每批处理 5 个
+      const batchSize = 5;
+      const batches: Token[][] = [];
+      
+      for (let i = 0; i < tokens.length; i += batchSize) {
+        batches.push(tokens.slice(i, i + batchSize));
+      }
+
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
+        
+        // 并发查询当前批次的所有代币
+        await Promise.all(batch.map(async (token, tokenIndex) => {
+          const globalIndex = batchIndex * batchSize + tokenIndex;
+          
+          try {
+            // 使用 viem 编码调用数据，确保正确性
+            const callData = encodeFunctionData({
+              abi: wallet_abi,
+              functionName: 'getTokenLockInfo',
+              args: [address as `0x${string}`, token.contractAddress as `0x${string}`]
+            });
+
+            // console.log(`\n📝 查询代币 ${globalIndex + 1}/${tokens.length}: ${token.symbol || 'Unknown'}`);
+            // console.log('   代币地址:', token.contractAddress);
+            
+            // 使用自定义的高速 RPC
+            const response = await fetch(BSC_RPC_URL, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: globalIndex + 1,
+                method: 'eth_call',
+                params: [
+                  {
+                    to: CONTRACT_ADDRESS,
+                    data: callData,
+                  },
+                  'latest',
+                ],
+              }),
+            });
+
+            const result = await response.json();
+            
+            // 检查是否有错误
+            if (result.error) {
+              console.error('   ❌ RPC 错误:', result.error);
+              statusMap[token.contractAddress.toLowerCase()] = false;
+              return;
+            }
+            
+            if (result.result && result.result !== '0x') {
+              console.log('   ✅ 返回数据长度:', result.result.length);
+              
+              if (result.result.length >= 258) {
+                // 解析返回值
+                // 返回值格式: (uint256 unlockTimestamp, bool isLocked, uint256 remainingTime, uint256 lockedAmount)
+                const data = result.result.slice(2); // 去掉 0x
+                
+                // 解析 isLocked 字段（第二个 32 字节）
+                const isLockedHex = data.slice(64, 128);
+                const isLocked = parseInt(isLockedHex, 16) === 1;
+                
+                // 存储锁定状态：true=已锁定，false=未锁定
+                statusMap[token.contractAddress.toLowerCase()] = isLocked;
+                
+                console.log(`   🎯 状态: ${isLocked ? '🔒 已锁定' : '✅ 未锁定'}`);
+              } else {
+                console.log('   ⚠️ 返回数据长度不足:', result.result.length);
+                statusMap[token.contractAddress.toLowerCase()] = false;
+              }
+            } else {
+              console.log('   ⚠️ 返回结果为空');
+              statusMap[token.contractAddress.toLowerCase()] = false;
+            }
+          } catch (err) {
+            console.error(`   ❌ 查询异常:`, err);
+            statusMap[token.contractAddress.toLowerCase()] = false;
+          }
+        }));
+
+        // 批次之间稍微延迟，避免过快
+        if (batchIndex < batches.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+
+      console.log('\n✅ 查询完成，状态汇总:');
+      console.log(statusMap);
+      setTokenLockStatus(statusMap);
+    };
+
+    fetchLockStatus();
+  }, [tokens, address]);
+
+  // 更新代币列表，根据锁定状态设置 canTransfer
+  // tokenLockStatus: true=已锁定，false=未锁定
+  // canTransfer: true=可转出，false=不可转出
   const tokensWithTransferStatus = useMemo(() => {
-    return tokens.map(token => ({
-      ...token,
-      canTransfer: canTransferTokens
-    }));
-  }, [tokens, canTransferTokens]);
+    return tokens.map(token => {
+      const isLocked = tokenLockStatus[token.contractAddress.toLowerCase()];
+      // 如果没有查询到锁定状态，默认为未锁定（可转出）
+      const canTransfer = isLocked === undefined ? true : !isLocked;
+      return {
+        ...token,
+        canTransfer
+      };
+    });
+  }, [tokens, tokenLockStatus]);
 
   // 搜索过滤代币列表
   const filteredTokens = useMemo(() => {
@@ -423,171 +528,6 @@ export default function Wallet() {
   const isValidAddress = (address: string): boolean => {
     return /^0x[a-fA-F0-9]{40}$/.test(address);
   };
-  const {writeContract,data: hash,isPending,error,reset} = useWriteContract()
-  const { isLoading: isConfirming, isSuccess } =useWaitForTransactionReceipt({hash,})
-  const isTxLoading = Boolean(isPending || isConfirming)
-  
-  // 发送交易函数的 ref（将在 tokenAddress 定义后赋值）
-  const sendAddTokenTransactionRef = useRef<(() => Promise<void>) | null>(null);
-  
-  // 使用 ref 防止重复显示成功消息
-  const hasShownAddTokenSuccessRef = useRef(false);
-
-
-  // 添加代币地址
-  const handleAddToken = async () => {
-    // 检查当前网络是否是 BSC，如果不是则切换
-    if (chainId !== bsc.id) {
-      try {
-        setPendingAddToken(true);
-        switchChain({ chainId: bsc.id });
-        setAlertVariant('primary');
-        setAlertMsg('正在切换到 BSC 网络，请确认...');
-      } catch (err) {
-        console.error('切换网络失败:', err);
-        setAlertVariant('danger');
-        setAlertMsg('切换网络失败，请手动切换到 BSC 网络');
-        setPendingAddToken(false);
-      }
-      return;
-    }
-
-    // 如果已经是 BSC 网络，直接发送交易
-    // sendAddTokenTransaction 在 tokenAddress 定义后创建
-    if (sendAddTokenTransactionRef.current) {
-      await sendAddTokenTransactionRef.current();
-    }
-  };
-
-  // 监听网络切换，当切换到 BSC 后自动发送交易
-  useEffect(() => {
-    if (chainId === bsc.id && pendingAddToken && sendAddTokenTransactionRef.current) {
-      sendAddTokenTransactionRef.current();
-    }
-  }, [chainId, pendingAddToken]);
-// 锁仓转入逻辑
-// 查询以添加的代币地址
-
-const {
-  data: tokenAddress,
-  isPending: isTokenAddressPending,
-  error: tokenAddressError,
-  refetch: refetchTokenAddress,
-} = useReadContract({
-  address: CONTRACT_ADDRESS,
-  abi: wallet_abi,
-  functionName: 'TokenAddress',
-  query: {
-    // 优化查询配置，加快刷新速度
-    staleTime: 0, // 不使用缓存，总是获取最新数据
-    gcTime: 5000, // 5秒后清除缓存
-    refetchOnWindowFocus: true, // 窗口聚焦时自动刷新
-    refetchInterval: 3000, // 每3秒自动刷新一次
-  },
-})
-console.log('tokenAddress', tokenAddress);
-
-// 设置代币地址成功后关闭弹窗
-useEffect(() => {
-  if (isSuccess && isAddTokenOpen) {
-    setNewTokenAddress('');
-    onAddTokenOpenChange(); // 关闭弹窗
-    // 立即刷新 tokenAddress 查询，获取最新的链上数据
-    refetchTokenAddress();
-    hasShownAddTokenSuccessRef.current = false; // 重置标记，准备显示成功消息
-  }
-}, [isSuccess, isAddTokenOpen, refetchTokenAddress, onAddTokenOpenChange]);
-
-// 当弹窗关闭后显示成功消息（使用 ref 防止重复显示）
-// 只有当 hash 存在且弹窗已关闭时才显示成功消息
-useEffect(() => {
-  if (isSuccess && !isAddTokenOpen && !hasShownAddTokenSuccessRef.current && hash) {
-    setAlertVariant('success');
-    setAlertMsg('代币地址设置成功');
-    hasShownAddTokenSuccessRef.current = true;
-  }
-}, [isSuccess, isAddTokenOpen, hash]);
-
-// 当开始新的设置代币地址时，重置成功消息标记
-useEffect(() => {
-  if (isAddTokenOpen) {
-    hasShownAddTokenSuccessRef.current = false;
-  }
-}, [isAddTokenOpen]);
-
-// 零地址（未设置代币地址时的默认值）
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
-
-  // 发送交易的实际函数（在 tokenAddress 定义后创建）
-  const sendAddTokenTransaction = useCallback(async () => {
-    if (!isValidAddress(newTokenAddress)) {
-      setAlertVariant('danger');
-      setAlertMsg('请输入有效的以太坊地址');
-      setPendingAddToken(false);
-      return;
-    }
-    
-    // 检查是否与当前合约中设置的代币地址相同
-    if (tokenAddress && String(tokenAddress).toLowerCase() === newTokenAddress.toLowerCase()) {
-      setAlertVariant('warning');
-      setAlertMsg('该代币地址已设置为当前代币地址');
-      setPendingAddToken(false);
-      return;
-    }
-
-    try {
-      await writeContract({
-        address: CONTRACT_ADDRESS,
-        abi: wallet_abi,
-        functionName: 'setTokenAddress',
-        args: [newTokenAddress],
-      } as any);
-      setPendingAddToken(false);
-    } catch (err) {
-      console.error(err);
-      setAlertVariant('danger');
-      setAlertMsg('交易发起失败');
-      setPendingAddToken(false);
-    }
-  }, [newTokenAddress, tokenAddress, writeContract]);
-  
-  // 更新 ref
-  useEffect(() => {
-    sendAddTokenTransactionRef.current = sendAddTokenTransaction;
-  }, [sendAddTokenTransaction]);
-
-// 检查代币地址是否有效（不是零地址且不为空）
-const isValidTokenAddress = useMemo(() => {
-  if (!tokenAddress) return false;
-  const addr = String(tokenAddress).toLowerCase();
-  return addr !== ZERO_ADDRESS.toLowerCase() && addr !== '0x0';
-}, [tokenAddress]);
-
-// 过滤出与合约设置的代币地址匹配的代币（用于转账）
-const transferableTokens = useMemo(() => {
-  if (!tokenAddress || !isValidTokenAddress) return [];
-  const tokenAddr = String(tokenAddress).toLowerCase();
-  return tokens.filter(token => 
-    String(token.contractAddress).toLowerCase() === tokenAddr
-  );
-}, [tokens, tokenAddress, isValidTokenAddress]);
-
-// 查询部分合约信息（基于合约返回的 tokenAddress）
-const {data: allowance,isPending: isReadPending,error: readError,refetch: refetchAllowance,} = useReadContract({
-  address: (tokenAddress as `0x${string}`) || undefined,
-  abi: ERC_abi,
-  functionName: 'allowance',
-  args: [address, CONTRACT_ADDRESS],
-  query: {
-    enabled: Boolean(address && tokenAddress),
-    // 优化查询配置
-    staleTime: 0, // 不使用缓存，总是获取最新数据
-    gcTime: 10000, // 10秒后清除缓存
-    refetchOnWindowFocus: false, // 窗口聚焦时不自动重新查询
-    retry: 2, // 失败时重试2次
-  },
-})
-console.log('allowance', allowance);
 
 const [lockAmount, setLockAmount] = useState<string>('')
 
@@ -604,7 +544,6 @@ const {
   writeContract: writeLock,
   data: lockHash,
   isPending: isLockPending,
-  isSuccess: isLockSuccess,
   reset: resetLock,
 } = useWriteContract()
 
@@ -614,78 +553,124 @@ const { isSuccess: approveSuccess } =
 const { isSuccess: lockSuccess } =
   useWaitForTransactionReceipt({ hash: lockHash })
 
+// 查询用户输入代币的授权额度
+const {data: allowance, refetch: refetchAllowance} = useReadContract({
+  address: (isValidAddress(lockTokenAddress) ? lockTokenAddress : undefined) as `0x${string}` | undefined,
+  abi: ERC_abi,
+  functionName: 'allowance',
+  args: [address, CONTRACT_ADDRESS],
+  query: {
+    enabled: Boolean(address && isValidAddress(lockTokenAddress)),
+    staleTime: 0,
+    gcTime: 5000,
+    refetchOnWindowFocus: false,
+    retry: 2,
+  },
+})
 
 const amountBigInt = () => {
-  if (!lockAmount) return parseUnits('0', 18); // 0 ERC20 token
-  return parseUnits(lockAmount, 18); // 默认 ERC20 18 位
+  if (!lockAmount) return parseUnits('0', 18);
+  const decimals = parseInt(lockTokenDecimals) || 18;
+  return parseUnits(lockAmount, decimals);
 }
 
-  // 打开锁仓弹窗（用户输入数量后再提交）
+  // 打开锁仓弹窗
   const handleLockDeposit = async () => {
-    if (!tokenAddress || !isValidAddress(String(tokenAddress))) {
-      setAlertVariant('danger'); setAlertMsg('请先设置有效的代币地址'); return;
-    }
     // 重置锁仓相关状态
     resetLock();
-    // 重置成功消息标记和清空之前的消息
+    resetApprove();
     hasShownLockSuccessRef.current = false;
     setAlertMsg(null);
     setLockAmount('');
+    setLockDays('30');
+    setLockTokenAddress('');
+    setLockTokenDecimals('18');
     onLockOpen();
   };
 
-  // 确认锁仓：根据 allowance 决定先 approve 还是直接 deposit
+  // 确认锁仓
   const handleLock = async () => {
-  if (!lockAmount || Number(lockAmount) <= 0) {
-    setAlertVariant('danger');
-    setAlertMsg('请输入正确的数量');
-    return;
-  }
-  if (!tokenAddress) {
-    setAlertVariant('danger');
-    setAlertMsg('请先设置代币地址');
-    return;
-  }
-
-  try {
-    const amount = amountBigInt();
-    await writeLock({
-      address: CONTRACT_ADDRESS as `0x${string}`,
-      abi: wallet_abi,
-      functionName: 'depositlockToken',
-      args: [amount],
-      account: address,
-    } as any);
-    setAlertVariant('primary');
-    setAlertMsg('锁仓交易已发送，等待确认...');
-  } catch (err: any) {
-    console.error(err);
-
-    // 如果用户取消交易
-    if (err?.cause?.code === 4001) { // MetaMask 用户拒绝
-      setAlertVariant('warning');
-      setAlertMsg('用户取消了交易');
-    } else {
+    if (!lockAmount || Number(lockAmount) <= 0) {
       setAlertVariant('danger');
-      setAlertMsg('锁仓交易发送失败');
+      setAlertMsg('请输入正确的数量');
+      return;
+    }
+    if (!lockDays || Number(lockDays) <= 0) {
+      setAlertVariant('danger');
+      setAlertMsg('请输入正确的锁定天数');
+      return;
+    }
+    if (!isValidAddress(lockTokenAddress)) {
+      setAlertVariant('danger');
+      setAlertMsg('请输入有效的代币地址');
+      return;
     }
 
-    // 重要：手动重置 writeContract 状态，恢复按钮
-    reset();
-  }
-};
+    // 检查网络
+    if (chainId !== bsc.id) {
+      try {
+        switchChain({ chainId: bsc.id });
+        setAlertVariant('primary');
+        setAlertMsg('正在切换到 BSC 网络，请确认...');
+      } catch (err) {
+        console.error('切换网络失败:', err);
+        setAlertVariant('danger');
+        setAlertMsg('切换网络失败，请手动切换到 BSC 网络');
+      }
+      return;
+    }
 
-// 单独授权按钮逻辑
+    try {
+      const amount = amountBigInt();
+      await writeLock({
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        abi: wallet_abi,
+        functionName: 'depositlockToken',
+        args: [lockTokenAddress, amount, BigInt(lockDays)],
+        account: address,
+      } as any);
+      setAlertVariant('primary');
+      setAlertMsg('锁仓交易已发送，等待确认...');
+    } catch (err: any) {
+      console.error(err);
+
+      if (err?.cause?.code === 4001) {
+        setAlertVariant('warning');
+        setAlertMsg('用户取消了交易');
+      } else {
+        setAlertVariant('danger');
+        setAlertMsg('锁仓交易发送失败');
+      }
+
+      resetLock();
+    }
+  };
+
+// 授权逻辑
 const handleApprove = async () => {
-  if (!tokenAddress) {
+  if (!isValidAddress(lockTokenAddress)) {
     setAlertVariant('danger');
-    setAlertMsg('请先设置代币地址');
+    setAlertMsg('请输入有效的代币地址');
+    return;
+  }
+
+  // 检查网络
+  if (chainId !== bsc.id) {
+    try {
+      switchChain({ chainId: bsc.id });
+      setAlertVariant('primary');
+      setAlertMsg('正在切换到 BSC 网络，请确认...');
+    } catch (err) {
+      console.error('切换网络失败:', err);
+      setAlertVariant('danger');
+      setAlertMsg('切换网络失败，请手动切换到 BSC 网络');
+    }
     return;
   }
 
   try {
     await writeApprove({
-      address: tokenAddress as `0x${string}`,
+      address: lockTokenAddress as `0x${string}`,
       abi: ERC_abi,
       functionName: 'approve',
       args: [CONTRACT_ADDRESS, MAX_UINT256],
@@ -696,7 +681,6 @@ const handleApprove = async () => {
   } catch (err: any) {
     console.error(err);
 
-    // 用户取消交易（MetaMask error code 4001）
     if (err?.cause?.code === 4001) {
       setAlertVariant('warning');
       setAlertMsg('用户取消了授权交易');
@@ -705,7 +689,6 @@ const handleApprove = async () => {
       setAlertMsg('授权交易发送失败');
     }
 
-    // 重置状态，允许再次点击
     resetApprove();
   }
 };
@@ -766,60 +749,113 @@ useEffect(() => {
 
 
 
-  // 发起转账
-  const handleTransfer = () => {
-    // 如果没有已设置的代币地址，不打开
-    if (!tokenAddress) {
+  // 查询选中代币的锁定信息
+  const { data: selectedTokenLockInfo } = useReadContract({
+    address: CONTRACT_ADDRESS as `0x${string}`,
+    abi: wallet_abi,
+    functionName: 'getTokenLockInfo',
+    args: [address as `0x${string}`, selectedToken?.contractAddress as `0x${string}`],
+    query: {
+      enabled: Boolean(address && selectedToken?.contractAddress),
+      staleTime: 0,
+      gcTime: 5000,
+      refetchOnWindowFocus: false,
+    },
+  });
+
+  // 判断选中的代币是否可以提取
+  const canWithdrawSelectedToken = useMemo(() => {
+    if (!selectedTokenLockInfo) return false; // 没有锁定信息，不允许提取
+    
+    // selectedTokenLockInfo 返回: [unlockTimestamp, isLocked, remainingTime, lockedAmount]
+    const [unlockTimestamp, isLocked, remainingTime, lockedAmount] = selectedTokenLockInfo as [bigint, boolean, bigint, bigint];
+    
+    // 关键检查：必须有锁定记录（lockedAmount > 0）
+    // 合约要求：只能提取通过 depositlockToken 锁仓的代币
+    if (lockedAmount === BigInt(0)) {
+      return false; // 没有锁定记录，无法提取
+    }
+    
+    // 如果未锁定（已经完全解锁），可以提取
+    if (!isLocked) return true;
+    
+    // 如果已锁定，检查是否已到解锁时间
+    const currentTime = Math.floor(Date.now() / 1000);
+    const unlockTime = Number(unlockTimestamp);
+    
+    return currentTime >= unlockTime;
+  }, [selectedTokenLockInfo]);
+  
+  // 获取不能提取的原因
+  const withdrawDisabledReason = useMemo(() => {
+    if (!selectedToken) return null;
+    if (!selectedTokenLockInfo) return '正在查询锁定信息...';
+    
+    const [unlockTimestamp, isLocked, remainingTime, lockedAmount] = selectedTokenLockInfo as [bigint, boolean, bigint, bigint];
+    
+    // 没有锁定记录
+    if (lockedAmount === BigInt(0)) {
+      return '该代币没有通过锁仓功能存入，无法提取。只能提取通过"锁仓转入"功能存入的代币。';
+    }
+    
+    // 仍在锁定期内
+    if (isLocked) {
+      const currentTime = Math.floor(Date.now() / 1000);
+      const unlockTime = Number(unlockTimestamp);
+      if (currentTime < unlockTime) {
+        return '该代币仍在锁定期内，未到解锁时间。';
+      }
+    }
+    
+    return null; // 可以提取
+  }, [selectedToken, selectedTokenLockInfo]);
+
+  // 发起提取
+  const handleWithdraw = () => {
+    if (tokens.length === 0) {
+      setAlertVariant('warning');
+      setAlertMsg('暂无可用代币');
       return;
     }
-    // 重置转账相关状态，避免上次交易的状态影响
-    resetTransfer();
+    // 重置提取相关状态
+    resetWithdraw();
     setAlertMsg(null);
-    // 默认选择第一个匹配的代币
-    if (transferableTokens.length > 0) {
-      setSelectedToken(transferableTokens[0]);
-    } else {
-      setSelectedToken(null);
-    }
-    setTransferAmount('');
-    setTransferTo('');
-    onTransferOpen();
+    hasShownWithdrawSuccessRef.current = false;
+    setSelectedToken(tokens[0]); // 默认选择第一个代币
+    setWithdrawAmount('');
+    onWithdrawOpen();
   };
 
-  // 转账相关状态
+  // 提取相关状态
   const {
-    writeContract: writeTransfer,
-    data: transferHash,
-    isPending: isTransferPending,
-    error: transferError,
-    reset: resetTransfer,
+    writeContract: writeWithdraw,
+    data: withdrawHash,
+    isPending: isWithdrawPending,
+    reset: resetWithdraw,
   } = useWriteContract();
 
-  const { isSuccess: transferSuccess, isLoading: isTransferConfirming } =
-    useWaitForTransactionReceipt({ hash: transferHash });
+  const { isSuccess: withdrawSuccess, isLoading: isWithdrawConfirming } =
+    useWaitForTransactionReceipt({ hash: withdrawHash });
 
-  const isTransferLoading = Boolean(isTransferPending || isTransferConfirming);
+  const isWithdrawLoading = Boolean(isWithdrawPending || isWithdrawConfirming);
 
-  // 确认转账
-  const handleConfirmTransfer = async () => {
-    if (!transferTo || !transferAmount) {
+  // 确认提取
+  const handleConfirmWithdraw = async () => {
+    if (!withdrawAmount) {
       setAlertVariant('danger');
-      setAlertMsg('请填写完整信息');
-      return;
-    }
-    if (!isValidAddress(transferTo)) {
-      setAlertVariant('danger');
-      setAlertMsg('请输入有效的接收地址');
+      setAlertMsg('请输入提取金额（输入 0 表示提取全部）');
       return;
     }
     if (!selectedToken) {
       setAlertVariant('danger');
-      setAlertMsg('请选择要转账的代币');
+      setAlertMsg('请选择要提取的代币');
       return;
     }
-    if (!tokenAddress) {
+    
+    // 检查是否可以提取
+    if (!canWithdrawSelectedToken) {
       setAlertVariant('danger');
-      setAlertMsg('代币地址未设置');
+      setAlertMsg(withdrawDisabledReason || '该代币暂时无法提取');
       return;
     }
 
@@ -838,87 +874,72 @@ useEffect(() => {
     }
 
     try {
-      // 获取代币的 decimals，默认 18
       const decimals = selectedToken.decimals || 18;
-      
-      // 验证余额 - 需要先去掉格式化字符串中的逗号
-      // selectedToken.amount 可能是 "35,645.5789" 这样的格式化字符串
-      const amountStr = (selectedToken.amount || '0').replace(/,/g, ''); // 去掉所有逗号
-      const availableBalance = parseFloat(amountStr);
-      const transferAmountNum = parseFloat(transferAmount);
-      
-      if (isNaN(availableBalance) || isNaN(transferAmountNum)) {
-        setAlertVariant('danger');
-        setAlertMsg('请输入有效的转账金额');
-        return;
-      }
-      
-      if (transferAmountNum > availableBalance) {
-        setAlertVariant('danger');
-        setAlertMsg(`转账金额超过可用余额 ${selectedToken.amount}`);
-        return;
-      }
-      
-      // 将用户输入的金额转换为 BigInt（考虑 decimals）
-      const amountBigInt = parseUnits(transferAmount, decimals);
+      const amountBigInt = parseUnits(withdrawAmount, decimals);
 
-      // 调用合约的 transferToken 方法
-      await writeTransfer({
+      // 调用合约的 withdrawLockedToken 方法
+      await writeWithdraw({
         address: CONTRACT_ADDRESS,
         abi: wallet_abi,
-        functionName: 'transferToken',
-        args: [[transferTo], [amountBigInt]],
+        functionName: 'withdrawLockedToken',
+        args: [selectedToken.contractAddress, amountBigInt],
       } as any);
 
       setAlertVariant('primary');
-      setAlertMsg('转账交易已发送，等待确认...');
+      setAlertMsg('提取交易已发送，等待确认...');
     } catch (err: any) {
-      console.error('转账失败:', err);
+      console.error('提取失败:', err);
 
-      // 如果用户取消交易
+      // 详细的错误处理
       if (err?.cause?.code === 4001) {
         setAlertVariant('warning');
-        setAlertMsg('用户取消了转账交易');
+        setAlertMsg('用户取消了提取交易');
+      } else if (err?.message?.includes('You have no locked tokens')) {
+        setAlertVariant('danger');
+        setAlertMsg('该代币没有锁定记录，无法提取。只能提取通过"锁仓转入"功能存入的代币。');
+      } else if (err?.message?.includes('Tokens still locked')) {
+        setAlertVariant('danger');
+        setAlertMsg('代币仍在锁定期内，未到解锁时间');
+      } else if (err?.message?.includes('Insufficient locked amount')) {
+        setAlertVariant('danger');
+        setAlertMsg('提取数量超过锁定数量');
       } else {
         setAlertVariant('danger');
-        setAlertMsg('转账交易发送失败');
+        setAlertMsg('提取交易失败: ' + (err?.shortMessage || err?.message || '未知错误'));
       }
 
-      // 重置状态
-      resetTransfer();
+      // 重要：重置状态，恢复按钮
+      resetWithdraw();
     }
   };
 
-  // 转账成功后关闭弹窗
+  // 提取成功后关闭弹窗
   useEffect(() => {
-    if (transferSuccess && isTransferOpen) {
-      setTransferAmount('');
-      setTransferTo('');
+    if (withdrawSuccess && isWithdrawOpen) {
+      setWithdrawAmount('');
       setSelectedToken(null);
-      // 关闭弹窗
-      onTransferOpenChange();
+      onWithdrawOpenChange();
+      hasShownWithdrawSuccessRef.current = false;
     }
-  }, [transferSuccess, isTransferOpen, onTransferOpenChange]);
+  }, [withdrawSuccess, isWithdrawOpen, onWithdrawOpenChange]);
 
-  // 当弹窗关闭后显示成功消息（使用 ref 防止重复显示）
-  const hasShownSuccessRef = useRef(false);
+  // 当弹窗关闭后显示成功消息
+  const hasShownWithdrawSuccessRef = useRef(false);
   
   useEffect(() => {
-    if (transferSuccess && !isTransferOpen && !hasShownSuccessRef.current) {
-      // 弹窗已关闭，显示成功消息
+    if (withdrawSuccess && !isWithdrawOpen && !hasShownWithdrawSuccessRef.current && withdrawHash) {
       setAlertVariant('success');
-      setAlertMsg('转账交易已确认');
-      hasShownSuccessRef.current = true;
-      // 可以在这里触发代币列表刷新
+      setAlertMsg('提取交易已确认');
+      hasShownWithdrawSuccessRef.current = true;
     }
-  }, [transferSuccess, isTransferOpen]);
+  }, [withdrawSuccess, isWithdrawOpen, withdrawHash]);
 
-  // 当开始新的转账时，重置成功消息标记
+  // 当开始新的提取时，重置成功消息标记
   useEffect(() => {
-    if (isTransferOpen && transferHash) {
-      hasShownSuccessRef.current = false;
+    if (isWithdrawOpen) {
+      hasShownWithdrawSuccessRef.current = false;
     }
-  }, [isTransferOpen, transferHash]);
+  }, [isWithdrawOpen]);
 
 // 通知关闭自动
 useEffect(() => {
@@ -934,7 +955,7 @@ useEffect(() => {
   return (
     <div className={styles.container}>
       {/* 只在没有弹窗打开时显示外层 Alert */}
-      {alertMsg && !isAddTokenOpen && !isLockOpen && !isTransferOpen && (
+      {alertMsg && !isLockOpen && !isWithdrawOpen && (
         <Alert
           key={alertVariant}
           color={alertVariant}
@@ -1016,41 +1037,24 @@ useEffect(() => {
           <div className={styles.cardHeaderContent}>
             <h2 className={styles.cardTitle}>代币列表</h2>
             <div className={styles.buttonGroup}>
-                <Button 
-                  color="primary" 
-                  size="sm" 
-                  onPress={() => {
-                    // 重置状态
-                    reset();
-                    hasShownAddTokenSuccessRef.current = false;
-                    setAlertMsg(null);
-                    setNewTokenAddress('');
-                    // 打开弹窗
-                    onAddTokenOpen();
-                  }}
-                  className={styles.actionButton}
-                  isDisabled={!isConnected}
-                >
-                  设置代币地址
-                </Button>
               <Button 
                 color="primary" 
                 size="sm"
                 className={styles.actionButton}
-                isDisabled={!isConnected || !tokenAddress}
+                isDisabled={!isConnected}
                 onPress={handleLockDeposit}
               >
                 锁仓转入
               </Button>
-                <Button 
-                  color="secondary" 
-                  size="sm" 
-                  onPress={handleTransfer}
-                  className={styles.actionButton}
-                  isDisabled={!isConnected || !tokenAddress}
-                >
-                  发起转账
-                </Button>
+              <Button 
+                color="secondary" 
+                size="sm" 
+                onPress={handleWithdraw}
+                className={styles.actionButton}
+                isDisabled={!isConnected}
+              >
+                提取代币
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -1176,63 +1180,14 @@ useEffect(() => {
         </CardBody>
       </Card>
 
-      {/* 添加代币地址 Modal */}
-      <Modal isOpen={isAddTokenOpen} onOpenChange={onAddTokenOpenChange} isDismissable={false} placement="center">
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">设置代币地址</ModalHeader>
-              <ModalBody>
-                {/* 在弹窗内显示错误消息，优先级最高（但不显示成功消息，成功消息在弹窗关闭后显示） */}
-                {alertMsg && alertVariant !== 'success' && (
-                  <Alert
-                    key={alertVariant}
-                    color={alertVariant}
-                    title={alertMsg}
-                    variant="flat"
-                    onClose={() => setAlertMsg(null)}
-                    className="mb-4 z-50"
-                    classNames={{
-                      base: "z-50"
-                    }}
-                  />
-                )}
-                <Input
-                  label="代币合约地址"
-                  placeholder="0x..."
-                  value={newTokenAddress}
-                  onChange={(e) => setNewTokenAddress(e.target.value)}
-                  description="请输入有效的以太坊代币合约地址"
-                  isInvalid={newTokenAddress !== '' && !isValidAddress(newTokenAddress)}
-                  errorMessage={newTokenAddress !== '' && !isValidAddress(newTokenAddress) ? '无效的地址格式' : ''}
-                />
-              </ModalBody>
-              <ModalFooter>
-                <Button color="danger" variant="light" onPress={onClose}>
-                  取消
-                </Button>
-                <Button
-                  color="primary"
-                  onPress={handleAddToken}
-                  isLoading={isTxLoading}
-                  isDisabled={!isValidAddress(newTokenAddress) || isTxLoading}
-                >
-                  添加
-                </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
-
-        {/* 锁仓转入 Modal */}
-        <Modal isOpen={isLockOpen} onOpenChange={onLockOpenChange} isDismissable={false} placement="center">
+      {/* 锁仓转入 Modal */}
+        <Modal isOpen={isLockOpen} onOpenChange={onLockOpenChange} isDismissable={false} placement="center" size="lg">
           <ModalContent>
             {(onClose) => (
               <>
                 <ModalHeader className="flex flex-col gap-1">锁仓转入</ModalHeader>
                 <ModalBody>
-                  {/* 在弹窗内显示错误消息，优先级最高（但不显示成功消息，成功消息在弹窗关闭后显示） */}
+                  {/* 在弹窗内显示错误消息 */}
                   {alertMsg && alertVariant !== 'success' && (
                     <Alert
                       key={alertVariant}
@@ -1246,99 +1201,116 @@ useEffect(() => {
                       }}
                     />
                   )}
-                  <div className="mb-4">
-                    <Input
-                      label="转入数量"
-                      placeholder="0.00"
-                      value={lockAmount}
-                      onChange={(e) => setLockAmount(e.target.value)}
-                      description="请输入要锁仓的代币数量"
-                      type="number"
-                      isInvalid={lockAmount !== '' && Number(lockAmount) <= 0}
-                      errorMessage={lockAmount !== '' && Number(lockAmount) <= 0 ? '请输入大于0的数量' : ''}
-                    />
-                  </div>
-
-                  <div className="text-sm text-default-600">
-                    <div>当前代币地址: {tokenAddress && isValidTokenAddress 
-                      ? String(tokenAddress) 
-                      : (tokenAddress ? ZERO_ADDRESS : '未设置')}</div>
-                    <div>当前授权: {allowance 
-                      ? (BigInt(allowance as any) === MAX_UINT256 ? '无限制' : formatUnits(allowance as any, 18))
-                      : '0'}
-                    </div>
-                    <div>解锁时间: {unlockTime
-                      ? new Date(Number(unlockTime) * 1000).toLocaleString('zh-CN', {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        })
-                      : '未设置'}
-                      </div>
-                  </div>
                   
-                  {/* 如果代币地址无效，显示提示 */}
-                  {!isValidTokenAddress && (
-                    <Alert
-                      color="warning"
-                      variant="flat"
-                      title="请先设置代币地址"
-                      description="代币地址为默认值（零地址），请先在代币列表页面设置有效的代币地址"
-                      className="mt-4"
-                    />
+                  <Input
+                    label="代币合约地址"
+                    placeholder="0x..."
+                    value={lockTokenAddress}
+                    onChange={(e) => setLockTokenAddress(e.target.value)}
+                    description="请输入要锁仓的代币合约地址"
+                    isInvalid={lockTokenAddress !== '' && !isValidAddress(lockTokenAddress)}
+                    errorMessage={lockTokenAddress !== '' && !isValidAddress(lockTokenAddress) ? '无效的地址格式' : ''}
+                  />
+
+                  <Input
+                    label="代币精度 (Decimals)"
+                    placeholder="18"
+                    value={lockTokenDecimals}
+                    onChange={(e) => setLockTokenDecimals(e.target.value)}
+                    description="代币的小数位数，通常为 18"
+                    type="number"
+                    isInvalid={lockTokenDecimals !== '' && (Number(lockTokenDecimals) < 0 || Number(lockTokenDecimals) > 18)}
+                    errorMessage={lockTokenDecimals !== '' && (Number(lockTokenDecimals) < 0 || Number(lockTokenDecimals) > 18) ? '请输入0-18之间的数字' : ''}
+                  />
+
+                  <Input
+                    label="转入数量"
+                    placeholder="0.00"
+                    value={lockAmount}
+                    onChange={(e) => setLockAmount(e.target.value)}
+                    description="请输入要锁仓的代币数量"
+                    type="number"
+                    isInvalid={lockAmount !== '' && Number(lockAmount) <= 0}
+                    errorMessage={lockAmount !== '' && Number(lockAmount) <= 0 ? '请输入大于0的数量' : ''}
+                  />
+                  
+                  <Input
+                    label="锁定天数"
+                    placeholder="30"
+                    value={lockDays}
+                    onChange={(e) => setLockDays(e.target.value)}
+                    description="代币将被锁定的天数"
+                    type="number"
+                    isInvalid={lockDays !== '' && Number(lockDays) <= 0}
+                    errorMessage={lockDays !== '' && Number(lockDays) <= 0 ? '请输入大于0的天数' : ''}
+                  />
+
+                  {isValidAddress(lockTokenAddress) && (
+                    <div className="text-sm text-default-600">
+                      <div>当前授权: {allowance 
+                        ? (BigInt(allowance as any) === MAX_UINT256 ? '无限制' : formatUnits(allowance as any, parseInt(lockTokenDecimals) || 18))
+                        : '0'}
+                      </div>
+                      <div>预计解锁时间: {lockDays && Number(lockDays) > 0
+                        ? new Date(Date.now() + Number(lockDays) * 24 * 60 * 60 * 1000).toLocaleString('zh-CN', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                          })
+                        : '请输入锁定天数'}
+                      </div>
+                    </div>
                   )}
                 </ModalBody>
                 <ModalFooter>
                   <Button color="danger" variant="light" onPress={onClose}>
                     取消
                   </Button>
-                  <Tooltip
-                    content={!isValidTokenAddress ? '请先设置代币地址' : ''}
-                    isDisabled={isValidTokenAddress}
-                    delay={0}
-                    closeDelay={0}
+                  <Button
+                    color="primary"
+                    onPress={handleApproveOrLock}
+                    isLoading={
+                      needsApproval
+                        ? (isApprovePending || (approveHash && !approveSuccess))
+                        : (isLockPending || (lockHash && !lockSuccess))
+                    }
+                    isDisabled={
+                      !isValidAddress(lockTokenAddress) ||
+                      !lockAmount ||
+                      Number(lockAmount) <= 0 ||
+                      !lockDays ||
+                      Number(lockDays) <= 0 ||
+                      !lockTokenDecimals ||
+                      Number(lockTokenDecimals) < 0 ||
+                      Number(lockTokenDecimals) > 18 ||
+                      (needsApproval
+                        ? (isApprovePending && !approveSuccess)
+                        : (isLockPending || (lockHash && !lockSuccess)))
+                    }
                   >
-                    <div>
-                      <Button
-                        color="primary"
-                        onPress={handleApproveOrLock}
-                        isLoading={
-                          needsApproval
-                            ? (isApprovePending || (approveHash && !approveSuccess))
-                            : (isLockPending || (lockHash && !lockSuccess))
-                        }
-                        isDisabled={
-                          !isValidTokenAddress ||
-                          (needsApproval
-                            ? (isApprovePending && !approveSuccess)
-                            : (!lockAmount || Number(lockAmount) <= 0 || (lockHash && !lockSuccess)))
-                        }
-                      >
-                        {needsApproval
-                          ? (approveSuccess ? '授权成功' : '授权合约')
-                          : '确认锁仓'}
-                      </Button>
-                    </div>
-                  </Tooltip>
+                    {needsApproval
+                      ? (approveSuccess ? '授权成功' : '授权合约')
+                      : '确认锁仓'}
+                  </Button>
                 </ModalFooter>
               </>
             )}
           </ModalContent>
         </Modal>
 
-      {/* 发起转账 Modal */}
-      <Modal isOpen={isTransferOpen} onOpenChange={onTransferOpenChange} isDismissable={false} placement="center" size="lg">
+      {/* 提取代币 Modal */}
+      <Modal isOpen={isWithdrawOpen} onOpenChange={onWithdrawOpenChange} isDismissable={false} placement="center" size="lg">
         <ModalContent>
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                发起转账
+                提取已解锁代币
               </ModalHeader>
               <ModalBody>
-                {/* 在弹窗内显示错误消息，优先级最高（但不显示成功消息，成功消息在弹窗关闭后显示） */}
+                {/* 在弹窗内显示错误消息 */}
                 {alertMsg && alertVariant !== 'success' && (
                   <Alert
                     key={alertVariant}
@@ -1352,82 +1324,126 @@ useEffect(() => {
                     }}
                   />
                 )}
-                {!tokenAddress ? (
-                  <Card className="w-full">
-                    <CardBody className="flex flex-col items-center justify-center py-8">
-                      <Alert
-                        color="warning"
-                        variant="flat"
-                        title="未设置代币地址"
-                        description="请先在代币列表页面设置代币地址，然后才能进行转账操作。"
-                        className="w-full"
-                      />
-                    </CardBody>
-                  </Card>
-                ) : transferableTokens.length > 0 ? (
+                
+                <div>
+                  <label className="text-sm text-default-600 mb-2 block">选择代币</label>
+                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                    {tokens.map((token, index) => (
+                      <Button
+                        key={index}
+                        variant={selectedToken?.contractAddress === token.contractAddress ? "solid" : "bordered"}
+                        color={selectedToken?.contractAddress === token.contractAddress ? "primary" : "default"}
+                        onPress={() => setSelectedToken(token)}
+                        className="justify-start"
+                      >
+                        <div className="flex items-center gap-2 w-full">
+                          <Chip size="sm" variant="flat" color="primary">
+                            {token.symbol || 'N/A'}
+                          </Chip>
+                          <span className="text-xs text-default-500">
+                            {formatAddress(token.contractAddress)}
+                          </span>
+                          <span className="text-xs text-default-400 ml-auto">
+                            余额: {token.amount}
+                          </span>
+                        </div>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                
+                {selectedToken && (
                   <>
-                    <div>
-                      <label className="text-sm text-default-600 mb-2 block">选择代币</label>
-                      <div className="flex flex-col gap-2">
-                        {transferableTokens.map((token, index) => (
-                          <Button
-                            key={index}
-                            variant={selectedToken?.contractAddress === token.contractAddress ? "solid" : "bordered"}
-                            color={selectedToken?.contractAddress === token.contractAddress ? "primary" : "default"}
-                            onPress={() => setSelectedToken(token)}
-                            className="justify-start"
-                          >
-                            <div className="flex items-center gap-2">
-                              <Chip size="sm" variant="flat" color="primary">
-                                {token.symbol || 'N/A'}
-                              </Chip>
-                              <span className="text-xs text-default-500">
-                                {formatAddress(token.contractAddress)}
-                              </span>
-                              <span className="text-xs text-default-400 ml-auto">
-                                余额: {token.amount}
-                              </span>
+                    <Input
+                      label="提取数量"
+                      placeholder="0.00"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      description={selectedTokenLockInfo && Number((selectedTokenLockInfo as any)[3]) > 0
+                        ? `可提取数量: ${formatAmount(Number(formatUnits((selectedTokenLockInfo as any)[3], selectedToken.decimals || 18)))} (输入 0 提取全部)`
+                        : `合约余额: ${selectedToken.amount}`}
+                      type="number"
+                    />
+                    
+                    {/* 显示锁定信息 */}
+                    {selectedTokenLockInfo && (() => {
+                      const [unlockTimestamp, isLocked, remainingTime, lockedAmount] = selectedTokenLockInfo as [bigint, boolean, bigint, bigint];
+                      const unlockTime = Number(unlockTimestamp);
+                      const locked = Number(lockedAmount);
+                      const decimals = selectedToken.decimals || 18;
+                      
+                      // 没有锁定记录
+                      if (locked === 0) {
+                        return (
+                          <Alert
+                            color="danger"
+                            variant="flat"
+                            title="❌ 无法提取"
+                            description={
+                              <div className="space-y-1">
+                                <div>该代币没有通过"锁仓转入"功能存入合约。</div>
+                                <div className="text-xs mt-2">
+                                  <strong>说明：</strong> 
+                                  <ul className="list-disc list-inside mt-1">
+                                    <li>只能提取通过"锁仓转入"功能存入的代币</li>
+                                    <li>直接转账到合约的代币无法通过此功能提取</li>
+                                    <li>请联系合约 owner 使用 owner 权限提取</li>
+                                  </ul>
+                                </div>
+                              </div>
+                            }
+                          />
+                        );
+                      }
+                      
+                      const lockedAmountFormatted = formatAmount(Number(formatUnits(BigInt(locked), decimals)));
+                      
+                      // 已锁定且未解锁
+                      if (isLocked) {
+                        const unlockDate = new Date(unlockTime * 1000).toLocaleString('zh-CN', {
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit'
+                        });
+                        
+                        return (
+                          <>
+                            <div className="text-sm text-default-600 space-y-1 p-3 bg-default-100 rounded-lg">
+                              <div>🔒 锁定状态: <span className="text-warning font-semibold">已锁定</span></div>
+                              <div>📦 可提取数量: {lockedAmountFormatted}</div>
+                              <div>⏰ 解锁时间: {unlockDate}</div>
+                              <div>⏳ 剩余时间: {Number(remainingTime)} 秒</div>
                             </div>
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                    {selectedToken && (
-                      <>
-                        <Input
-                          label="接收地址"
-                          placeholder="0x..."
-                          value={transferTo}
-                          onChange={(e) => setTransferTo(e.target.value)}
-                          description="请输入接收方的以太坊地址"
-                          isInvalid={transferTo !== '' && !isValidAddress(transferTo)}
-                          errorMessage={transferTo !== '' && !isValidAddress(transferTo) ? '无效的地址格式' : ''}
-                        />
-                        <Input
-                          label="转账数量"
-                          placeholder="0.00"
-                          value={transferAmount}
-                          onChange={(e) => setTransferAmount(e.target.value)}
-                          description={`可用余额: ${selectedToken.amount}`}
-                          type="number"
-                          isInvalid={transferAmount !== '' && parseFloat(transferAmount) <= 0}
-                          errorMessage={transferAmount !== '' && parseFloat(transferAmount) <= 0 ? '请输入大于0的数量' : ''}
-                        />
-                      </>
-                    )}
+                            <Alert
+                              color="warning"
+                              variant="flat"
+                              title="⚠️ 代币仍在锁定期内"
+                              description="该代币尚未到达解锁时间，无法提取。请等待解锁时间到达后再试。"
+                            />
+                          </>
+                        );
+                      }
+                      
+                      // 已解锁，可以提取
+                      return (
+                        <>
+                          <div className="text-sm text-success-600 space-y-1 p-3 bg-success-50 rounded-lg">
+                            <div>✅ 锁定状态: <span className="font-semibold">已解锁</span></div>
+                            <div>📦 可提取数量: {lockedAmountFormatted}</div>
+                          </div>
+                          <Alert
+                            color="success"
+                            variant="flat"
+                            title="✅ 可以提取"
+                            description="该代币已解锁，可以正常提取。输入 0 表示提取全部锁定数量。"
+                          />
+                        </>
+                      );
+                    })()}
                   </>
-                ) : (
-                  <Card className="w-full">
-                    <CardBody className="flex flex-col items-center justify-center py-8">
-                      <Alert
-                        color="default"
-                        variant="flat"
-                        title="暂无匹配的代币"
-                        description={`已设置的代币地址为 ${formatAddress(String(tokenAddress))}，但在代币列表中未找到匹配的代币。请确保该代币地址有余额。`}
-                        className="w-full"
-                      />
-                    </CardBody>
-                  </Card>
                 )}
               </ModalBody>
               <ModalFooter>
@@ -1435,23 +1451,24 @@ useEffect(() => {
                   color="danger" 
                   variant="light" 
                   onPress={onClose}
-                  isDisabled={isTransferLoading}
+                  isDisabled={isWithdrawLoading}
                 >
                   取消
                 </Button>
                 <Button 
                   color="primary" 
-                  onPress={handleConfirmTransfer}
-                  isLoading={isTransferLoading}
+                  onPress={handleConfirmWithdraw}
+                  isLoading={isWithdrawLoading}
                   isDisabled={
                     !selectedToken ||
-                    !isValidAddress(transferTo) || 
-                    !transferAmount || 
-                    parseFloat(transferAmount) <= 0 ||
-                    isTransferLoading
+                    !withdrawAmount ||
+                    isWithdrawLoading ||
+                    !canWithdrawSelectedToken // 添加锁定状态检查
                   }
                 >
-                  {isTransferLoading ? '处理中...' : '确认转账'}
+                  {isWithdrawLoading ? '处理中...' : 
+                   !canWithdrawSelectedToken ? (withdrawDisabledReason?.includes('没有锁定记录') || withdrawDisabledReason?.includes('没有通过锁仓功能') ? '无锁定记录' : '代币已锁定') : 
+                   '确认提取'}
                 </Button>
               </ModalFooter>
             </>
