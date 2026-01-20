@@ -582,7 +582,7 @@ const amountBigInt = () => {
     hasShownLockSuccessRef.current = false;
     setAlertMsg(null);
     setLockAmount('');
-    setLockDays('30');
+    setLockDays('7');
     setLockTokenAddress('');
     setLockTokenDecimals('18');
     onLockOpen();
