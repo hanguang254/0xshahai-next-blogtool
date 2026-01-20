@@ -843,7 +843,7 @@ useEffect(() => {
   const handleConfirmWithdraw = async () => {
     if (!withdrawAmount) {
       setAlertVariant('danger');
-      setAlertMsg('请输入提取金额（输入 0 表示提取全部）');
+      setAlertMsg('请输入提取金额');
       return;
     }
     if (!selectedToken) {
@@ -1360,7 +1360,7 @@ useEffect(() => {
                       value={withdrawAmount}
                       onChange={(e) => setWithdrawAmount(e.target.value)}
                       description={selectedTokenLockInfo && Number((selectedTokenLockInfo as any)[3]) > 0
-                        ? `可提取数量: ${formatAmount(Number(formatUnits((selectedTokenLockInfo as any)[3], selectedToken.decimals || 18)))} (输入 0 提取全部)`
+                        ? `可提取数量: ${formatAmount(Number(formatUnits((selectedTokenLockInfo as any)[3], selectedToken.decimals || 18)))}`
                         : `合约余额: ${selectedToken.amount}`}
                       type="number"
                     />
@@ -1438,7 +1438,7 @@ useEffect(() => {
                             color="success"
                             variant="flat"
                             title="✅ 可以提取"
-                            description="该代币已解锁，可以正常提取。输入 0 表示提取全部锁定数量。"
+                            description="该代币已解锁，可以正常提取。"
                           />
                         </>
                       );
