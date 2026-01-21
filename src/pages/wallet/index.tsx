@@ -648,9 +648,9 @@ const amountBigInt = () => {
       setAlertMsg('请输入正确的数量');
       return;
     }
-    if (!lockDays || Number(lockDays) <= 0) {
+    if (!lockDays || Number(lockDays) < 1 || !Number.isInteger(Number(lockDays))) {
       setAlertVariant('danger');
-      setAlertMsg('请输入正确的锁定天数');
+      setAlertMsg('锁定天数不能少于1天，且必须为整数');
       return;
     }
     if (!isValidAddress(lockTokenAddress)) {
@@ -1317,11 +1317,19 @@ useEffect(() => {
                     label="锁定天数"
                     placeholder="7"
                     value={lockDays}
-                    onChange={(e) => setLockDays(e.target.value)}
-                    description="代币将被锁定的天数"
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // 只允许输入整数
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setLockDays(value);
+                      }
+                    }}
+                    description="代币将被锁定的天数（最少1天，仅限整数）"
                     type="number"
-                    isInvalid={lockDays !== '' && Number(lockDays) <= 0}
-                    errorMessage={lockDays !== '' && Number(lockDays) <= 0 ? '请输入大于0的天数' : ''}
+                    min="1"
+                    step="1"
+                    isInvalid={lockDays !== '' && (Number(lockDays) < 1 || !Number.isInteger(Number(lockDays)))}
+                    errorMessage={lockDays !== '' && (Number(lockDays) < 1 || !Number.isInteger(Number(lockDays))) ? '锁定天数不能少于1天，且必须为整数' : ''}
                   />
 
                   {isValidAddress(lockTokenAddress) && (
@@ -1330,7 +1338,7 @@ useEffect(() => {
                         ? (BigInt(allowance as any) === MAX_UINT256 ? '无限制' : formatUnits(allowance as any, parseInt(lockTokenDecimals) || 18))
                         : '0'}
                       </div>
-                      <div>预计解锁时间: {lockDays && Number(lockDays) > 0
+                      <div>预计解锁时间: {lockDays && Number(lockDays) >= 1
                         ? new Date(Date.now() + Number(lockDays) * 24 * 60 * 60 * 1000).toLocaleString('zh-CN', {
                             year: 'numeric',
                             month: '2-digit',
@@ -1361,7 +1369,8 @@ useEffect(() => {
                       !lockAmount ||
                       Number(lockAmount) <= 0 ||
                       !lockDays ||
-                      Number(lockDays) <= 0 ||
+                      Number(lockDays) < 1 ||
+                      !Number.isInteger(Number(lockDays)) ||
                       !lockTokenDecimals ||
                       Number(lockTokenDecimals) < 0 ||
                       Number(lockTokenDecimals) > 18 ||
