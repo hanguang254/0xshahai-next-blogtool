@@ -64,6 +64,7 @@ export default function Wallet() {
   const [withdrawAmount, setWithdrawAmount] = useState<string>('');
   const [lockTokenAddress, setLockTokenAddress] = useState<string>('');
   const [lockTokenDecimals, setLockTokenDecimals] = useState<string>('18');
+  const [countdown, setCountdown] = useState<number>(0); // 倒计时状态
 
   const chainId = useChainId();
   const { switchChain } = useSwitchChain();
@@ -563,6 +564,24 @@ export default function Wallet() {
     return /^0x[a-fA-F0-9]{40}$/.test(address);
   };
 
+  // 格式化倒计时时间（秒数转换为 天时分秒）
+  const formatCountdown = (seconds: number): string => {
+    if (seconds <= 0) return '已解锁';
+    
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    const parts = [];
+    if (days > 0) parts.push(`${days}天`);
+    if (hours > 0) parts.push(`${hours}小时`);
+    if (minutes > 0) parts.push(`${minutes}分钟`);
+    if (secs > 0 || parts.length === 0) parts.push(`${secs}秒`);
+    
+    return parts.join(' ');
+  };
+
 const [lockAmount, setLockAmount] = useState<string>('')
 
 // ERC20 approve 状态
@@ -796,6 +815,36 @@ useEffect(() => {
       refetchOnWindowFocus: false,
     },
   });
+
+  // 倒计时逻辑：每秒更新一次
+  useEffect(() => {
+    if (!isWithdrawOpen || !selectedTokenLockInfo) return;
+    
+    const [unlockTimestamp, isLocked, remainingTime, lockedAmount] = selectedTokenLockInfo as [bigint, boolean, bigint, bigint];
+    
+    // 只有在已锁定的情况下才需要倒计时
+    if (!isLocked) return;
+    
+    // 初始化倒计时
+    const currentTime = Math.floor(Date.now() / 1000);
+    const unlockTime = Number(unlockTimestamp);
+    const initialRemaining = Math.max(0, unlockTime - currentTime);
+    setCountdown(initialRemaining);
+    
+    // 启动倒计时定时器
+    const timer = setInterval(() => {
+      setCountdown(prev => {
+        const newValue = prev - 1;
+        if (newValue <= 0) {
+          clearInterval(timer);
+          return 0;
+        }
+        return newValue;
+      });
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, [isWithdrawOpen, selectedTokenLockInfo]);
 
   // 判断选中的代币是否可以提取
   const canWithdrawSelectedToken = useMemo(() => {
@@ -1410,7 +1459,7 @@ useEffect(() => {
                             <div>🔒 锁定状态: <span className="text-warning font-semibold">已锁定</span></div>
                             <div>📦 可提取数量: {lockedAmountFormatted}</div>
                             <div>⏰ 解锁时间: {unlockDate}</div>
-                            <div>⏳ 剩余时间: {Number(remainingTime)} 秒</div>
+                            <div>⏳ 剩余时间: <span className="text-warning font-semibold">{formatCountdown(countdown)}</span></div>
                           </div>
                         );
                       }
