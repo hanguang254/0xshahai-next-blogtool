@@ -88,6 +88,7 @@ export default function MemeMap() {
     // 转换数据为气泡节点
     const nodes: BubbleNode[] = tokens
       .filter(t => t.marketCap && t.marketCap > 0)
+      .filter(t => typeof t.priceChange?.m5 === 'number')
       .map(token => {
         // 使用对数scale来计算半径，避免差距过大
         const minRadius = 30;
@@ -388,12 +389,14 @@ export default function MemeMap() {
         </div>
       </div>
       
-      <svg
-        ref={svgRef}
-        className={styles.svg}
-        width="100%"
-        height="100%"
-      />
+      <div className={styles.mapWrapper}>
+        <svg
+          ref={svgRef}
+          className={styles.svg}
+          width="100%"
+          height="100%"
+        />
+      </div>
 
       {hoveredToken && (
         <div 

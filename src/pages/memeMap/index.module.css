@@ -60,6 +60,18 @@
   cursor: grabbing;
 }
 
+.mapWrapper {
+  width: min(1200px, 92vw);
+  height: min(720px, 70vh);
+  margin: 120px auto 0;
+  border-radius: 24px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
 .loading {
   display: flex;
   align-items: center;
