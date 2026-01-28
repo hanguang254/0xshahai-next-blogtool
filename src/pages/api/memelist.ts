@@ -39,6 +39,20 @@ function extractMarketCap(pair: PairInfo | undefined) {
   return undefined;
 }
 
+function extractPriceChange(pair: PairInfo | undefined) {
+  if (!pair) return undefined;
+  const priceChange = pair.priceChange as Record<string, unknown> | undefined;
+  if (!priceChange) return undefined;
+  
+  const m5 = typeof priceChange.m5 === "number" ? priceChange.m5 : undefined;
+  const h1 = typeof priceChange.h1 === "number" ? priceChange.h1 : undefined;
+  
+  if (m5 !== undefined || h1 !== undefined) {
+    return { m5, h1 };
+  }
+  return undefined;
+}
+
 function formatIconUrl(icon?: unknown) {
   if (typeof icon !== "string") return undefined;
   const CDN_BASE = "https://cdn.dexscreener.com/cms/images";
@@ -100,6 +114,7 @@ export default async function handler(
       name?: string;
       marketCap?: number;
       pairAddress?: string;
+      priceChange?: { m5?: number; h1?: number };
       score?: number;
       url?: string;
       headerImageUrl?: string;
@@ -113,6 +128,7 @@ export default async function handler(
       const chainId = extractChainId(token);
       let marketCap: number | undefined;
       let pairAddress: string | undefined;
+      let priceChange: { m5?: number; h1?: number } | undefined;
       let label: string | undefined;
       let symbol: string | undefined;
       let name: string | undefined;
@@ -123,6 +139,7 @@ export default async function handler(
           const pair = await fetchPairByToken(chainId, token.tokenAddress);
           if (pair) {
             marketCap = extractMarketCap(pair);
+            priceChange = extractPriceChange(pair);
             pairAddress =
               typeof pair.pairAddress === "string"
                 ? pair.pairAddress
@@ -163,6 +180,7 @@ export default async function handler(
         name,
         marketCap,
         pairAddress,
+        priceChange,
         score,
         url,
         headerImageUrl: formatHeaderUrl(token.header),
