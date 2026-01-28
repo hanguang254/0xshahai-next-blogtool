@@ -21,6 +21,7 @@ export default function App() {
     // { label: "Web3工具", route: "/tools" }, // 暂不显示
     { label: "Web3导航", route: "/page3"},
     { label: "合约钱包", route: "/wallet"},
+    { label: "MemeMap", route: "/memeMap"}
   ];
 
 

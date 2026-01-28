@@ -54,8 +54,12 @@ function extractPriceChange(pair: PairInfo | undefined) {
 }
 
 function formatIconUrl(icon?: unknown) {
-  if (typeof icon !== "string") return undefined;
+  if (typeof icon !== "string" || icon.trim() === "") return undefined;
   const CDN_BASE = "https://cdn.dexscreener.com/cms/images";
+  // 如果icon已经是完整URL，直接返回
+  if (icon.startsWith('http://') || icon.startsWith('https://')) {
+    return icon;
+  }
   return `${CDN_BASE}/${icon}?width=800&height=800&quality=90`;
 }
 
@@ -112,6 +116,11 @@ export default async function handler(
     }
 
     const uniqueTokens = Array.from(uniqueMap.values());
+    
+    // 调试：检查原始数据中有多少包含icon字段
+    const tokensWithIcon = uniqueTokens.filter(t => t.icon && typeof t.icon === 'string').length;
+    console.log(`[API] 📷 原始数据: 总数=${uniqueTokens.length}, 包含icon字段=${tokensWithIcon}`);
+    
     const itemsWithDetails: Array<{
       chainId: string;
       tokenAddress: string;
@@ -139,6 +148,7 @@ export default async function handler(
       let symbol: string | undefined;
       let name: string | undefined;
       let error: string | undefined;
+      let iconFromPair: string | undefined;
 
       try {
         if (chainId && typeof token.tokenAddress === "string") {
@@ -162,6 +172,30 @@ export default async function handler(
                 ? baseToken.symbol
                 : undefined;
             name = label;
+            
+            // 尝试从多个地方获取图片
+            // 1. 从pair的info中获取
+            const info = pair.info as Record<string, unknown> | undefined;
+            if (info && typeof info.imageUrl === "string") {
+              iconFromPair = info.imageUrl;
+            }
+            
+            // 2. 从pair的profile中获取
+            if (!iconFromPair) {
+              const profile = pair.profile as Record<string, unknown> | undefined;
+              if (profile && typeof profile.icon === "string") {
+                iconFromPair = formatIconUrl(profile.icon);
+              }
+            }
+            
+            // 3. 从baseToken中获取
+            if (!iconFromPair && baseToken) {
+              if (typeof baseToken.logo === "string") {
+                iconFromPair = baseToken.logo;
+              } else if (typeof baseToken.image === "string") {
+                iconFromPair = baseToken.image;
+              }
+            }
           } else {
             error = "pair_not_found";
           }
@@ -178,6 +212,9 @@ export default async function handler(
       const claimDate =
         typeof token.claimDate === "string" ? token.claimDate : undefined;
 
+      // 图片优先级：token.icon > pair的imageUrl
+      const finalIcon = formatIconUrl(token.icon) || iconFromPair;
+
       itemsWithDetails.push({
         chainId: chainId!,
         tokenAddress: token.tokenAddress!,
@@ -190,7 +227,7 @@ export default async function handler(
         score,
         url,
         headerImageUrl: formatHeaderUrl(token.header),
-        iconUrl: formatIconUrl(token.icon),
+        iconUrl: finalIcon,
         claimDate,
         links: Array.isArray(token.links) ? token.links : undefined,
         error,
@@ -210,6 +247,20 @@ export default async function handler(
       ...item,
       rank: index + 1,
     }));
+
+    // 调试信息：统计图片情况
+    const withIcon = rankedItems.filter(item => item.iconUrl && item.iconUrl.trim() !== '').length;
+    const withoutIcon = rankedItems.length - withIcon;
+    console.log(`[API] 📊 返回数据: 总数=${rankedItems.length}, 有图片=${withIcon}, 无图片=${withoutIcon}`);
+    
+    // 打印前3个无图片的代币信息供调试
+    const noIconItems = rankedItems.filter(item => !item.iconUrl || item.iconUrl.trim() === '').slice(0, 3);
+    if (noIconItems.length > 0) {
+      console.log('[API] 🔍 无图片的代币示例:');
+      noIconItems.forEach(item => {
+        console.log(`  - ${item.symbol} (${item.chainId}): ${item.tokenAddress}`);
+      });
+    }
 
     return res.status(200).json({
       total: rankedItems.length,
