@@ -96,7 +96,7 @@ export default function Wallet() {
   const CHAIN_ID = '56';
   // DexScreener API 请求频率限制：每分钟300次 = 每秒5次 = 每200ms一次
   // 设置为 250ms 以保留安全边际
-  const REQUEST_INTERVAL = 100;
+  const REQUEST_INTERVAL = 200;
 
   // 代币列表（由 Chainbase 接口获取）
   const [tokens, setTokens] = useState<Token[]>([]);
@@ -448,7 +448,7 @@ export default function Wallet() {
 
         // 批次之间稍微延迟，避免过快
         if (batchIndex < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
       }
 
