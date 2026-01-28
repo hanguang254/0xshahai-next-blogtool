@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import styles from './index.module.css'
 import {Card, CardHeader, CardBody, CardFooter, Avatar, Button} from "@heroui/react";
 import Image from 'next/image';
+import { GlowingEffect } from "@/components/ui/glowing-effect";
 
 
 
@@ -19,7 +20,19 @@ export default function Owner() {
   return (
     <div className={styles.container}>
       <div className={styles.avatarContainer}>
-        <Avatar src="/a.jpg" className="w-28 h-28" />
+        <div className="relative rounded-full p-2">
+          <GlowingEffect
+            spread={90}
+            glow={true}
+            disabled={false}
+            proximity={48}
+            inactiveZone={0.05}
+            borderWidth={3}
+          />
+          <div className="relative z-10 rounded-full">
+            <Avatar src="/a.jpg" className="w-28 h-28" />
+          </div>
+        </div>
       </div>
       <div className={styles.titleContainer}><h2>沙海 0xshahai</h2></div>
 
@@ -30,7 +43,16 @@ export default function Owner() {
       </div>
 
       <div className={styles.twCard}>
-        <Card className="max-w-[340px]">
+        <div className="relative rounded-[1.25rem] p-2">
+          <GlowingEffect
+            spread={110}
+            glow={true}
+            disabled={false}
+            proximity={64}
+            inactiveZone={0.01}
+            borderWidth={3}
+          />
+          <Card className="relative z-10 max-w-[340px]">
           <CardHeader className="justify-between">
             <div className="flex gap-5">
               <Avatar isBordered radius="full" size="md" src="/a.jpg" />
@@ -68,7 +90,8 @@ export default function Owner() {
               <p className="text-default-400 text-small">Followers</p>
             </div>
           </CardFooter>
-        </Card>
+          </Card>
+        </div>
       </div>
 
       <div className={styles.footer}>
