@@ -89,14 +89,7 @@ export default function Wallet() {
   // const MAX_UINT256 = (1n << 256n) - 1n;
   const MAX_UINT256 = parseUnits('115792089237316195423570985008687907853269984665640564039457584007913129639935', 0);
 
-  // Chainbase API 配置
-  const CHAINBASE_API_KEY = '38HqF3yzT2k3GPnGF5tBCoDmnRQ';
-  const CHAINBASE_ENDPOINT = 'https://api.chainbase.online/v1';
-  // BSC 链 ID (根据 Chainbase 文档，BSC 的 chain_id 是 56)
-  const CHAIN_ID = '56';
-  // DexScreener API 请求频率限制：每分钟300次 = 每秒5次 = 每200ms一次
-  // 设置为 250ms 以保留安全边际
-  const REQUEST_INTERVAL = 200;
+  // 静态显示的合约钱包地址已在上面定义
 
   // 代币列表（由 Chainbase 接口获取）
   const [tokens, setTokens] = useState<Token[]>([]);
@@ -149,78 +142,9 @@ export default function Wallet() {
     }
   };
 
-  // 将十六进制余额转换为格式化的十进制字符串
-  const formatHexBalance = (hexBalance: string, decimals: number): string => {
-    try {
-      if (!hexBalance || hexBalance === '0x0' || hexBalance === '0x') return '0';
-      const balanceBigInt = BigInt(hexBalance);
-      const divisor = BigInt(10 ** decimals);
-      const wholePart = balanceBigInt / divisor;
-      const fractionalPart = balanceBigInt % divisor;
-      
-      if (fractionalPart === BigInt(0)) {
-        return wholePart.toString();
-      }
-      
-      const fractionalStr = fractionalPart.toString().padStart(decimals, '0');
-      const trimmedFractional = fractionalStr.replace(/0+$/, '');
-      const num = Number(wholePart) + Number('0.' + trimmedFractional);
-      
-      const abs = Math.abs(num);
-      const maxFraction = abs > 1 ? 4 : 8;
-      return num.toLocaleString(undefined, { maximumFractionDigits: maxFraction });
-    } catch (err) {
-      console.error('格式化余额失败:', err);
-      return '0';
-    }
-  };
+  // 已移除本地的余额和市场数据获取函数，统一使用 /api/balance 接口
 
-  // 获取代币市值、价格和涨跌幅（使用 DexScreener API）
-  const fetchTokenMarketData = async (contractAddress: string, delay: number = 0): Promise<{ priceUsd: number | null; marketCap: number | null; priceChange24h: number | null }> => {
-    if (delay > 0) {
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-    
-    try {
-      // DexScreener API: bsc 链的 chainId 是 'bsc'
-      const response = await fetch(
-        `https://api.dexscreener.com/latest/dex/tokens/${contractAddress}`,
-        {
-          method: 'GET',
-          headers: {
-            'accept': 'application/json'
-          }
-        }
-      );
-      
-      if (!response.ok) {
-        console.error(`获取市场数据失败 ${contractAddress}:`, response.statusText);
-        return { priceUsd: null, marketCap: null, priceChange24h: null };
-      }
-      
-      const json = await response.json();
-      
-      // DexScreener 返回的是交易对列表，我们取第一个 BSC 链上的交易对
-      const pairs = json.pairs || [];
-      const bscPair = pairs.find((pair: any) => pair.chainId === 'bsc') || pairs[0];
-      
-      if (!bscPair) {
-        console.warn(`未找到交易对数据 ${contractAddress}`);
-        return { priceUsd: null, marketCap: null, priceChange24h: null };
-      }
-      
-      const priceUsd = bscPair.priceUsd ? parseFloat(bscPair.priceUsd) : null;
-      const marketCap = bscPair.marketCap || bscPair.fdv || null;
-      const priceChange24h = bscPair.priceChange?.h24 || null;
-      
-      return { priceUsd, marketCap, priceChange24h };
-    } catch (err) {
-      console.error(`获取市场数据错误 ${contractAddress}:`, err);
-      return { priceUsd: null, marketCap: null, priceChange24h: null };
-    }
-  };
-
-  // 从 Chainbase 拉取指定钱包的 ERC20 代币余额和价格
+  // 从统一的 /api/balance 接口获取代币余额和价格数据
   useEffect(() => {
     // 确保只在客户端执行
     if (typeof window === 'undefined') return;
@@ -238,95 +162,50 @@ export default function Wallet() {
           setTokensError(null);
         }
 
-        // 第一步：获取代币列表
-        const tokensResponse = await fetch(
-          `${CHAINBASE_ENDPOINT}/account/tokens?chain_id=${CHAIN_ID}&address=${CONTRACT_ADDRESS}&limit=100&page=1`,
-          {
-            method: 'GET',
-            headers: {
-              'x-api-key': CHAINBASE_API_KEY,
-              'accept': 'application/json'
-            }
-          }
-        );
+        // 调用统一的 balance 接口
+        const response = await fetch(`/api/balance?address=${CONTRACT_ADDRESS}`);
 
-        if (!tokensResponse.ok) {
-          throw new Error(`Chainbase API 返回错误: ${tokensResponse.statusText}`);
+        if (!response.ok) {
+          throw new Error(`Balance API 返回错误: ${response.statusText}`);
         }
 
-        const tokensJson = await tokensResponse.json();
-        const tokensData = tokensJson.data || [];
+        const data = await response.json();
+        const tokensData = data.tokens || [];
 
         if (!Array.isArray(tokensData) || tokensData.length === 0) {
           if (mounted) {
             setTokens([]);
             setIsLoadingTokens(false);
-            // 首次加载完成后，标记为非首次加载
             isFirstLoadRef.current = false;
           }
           return;
         }
 
-        // 第二步：为每个代币获取市值和涨跌幅数据
-        // DexScreener API 限制：每分钟 300 次请求，设置为每 250ms 一次（每秒 4 次）
-        const mapped: Token[] = [];
-        for (let i = 0; i < tokensData.length; i++) {
-          const token = tokensData[i];
-          const contractAddress = token.contract_address || '';
-          const balance = token.balance || '0x0';
-          const decimals = token.decimals || 18;
-          const symbol = token.symbol || token.name || 'N/A';
-          
-          // 格式化余额
-          const amount = formatHexBalance(balance, decimals);
-          
-          // 获取价格、市值和涨跌幅数据（带延迟以控制 API 频率）
-          const delay = i * REQUEST_INTERVAL; // 第一个请求立即执行，后续逐步延迟
-          const { priceUsd, marketCap, priceChange24h } = await fetchTokenMarketData(contractAddress, delay);
-          
-          // 计算余额价值（代币数量 × 单价）
-          const amountNum = parseFloat((amount || '0').replace(/,/g, '')); // 去掉格式化的逗号
-          const balanceValueUsd = priceUsd && amountNum > 0 ? amountNum * priceUsd : 0;
-          const balanceValueFormatted = balanceValueUsd > 0
-            ? formatMarketCap(balanceValueUsd)
-            : '$0.00';
-          
-          // 格式化市值（使用 K、M、B、T 单位）
-          const marketCapFormatted = marketCap && marketCap > 0
-            ? formatMarketCap(marketCap)
-            : 'N/A';
-          
-          // 格式化涨跌幅
-          const priceChange24hFormatted = priceChange24h != null
-            ? `${priceChange24h >= 0 ? '+' : ''}${priceChange24h.toFixed(2)}%`
-            : 'N/A';
-
-          mapped.push({
-            contractAddress,
-            amount: amount || '0',
-            balanceValue: balanceValueFormatted,
-            marketCap: marketCapFormatted,
-            priceChange24h: priceChange24hFormatted,
-            canTransfer: true, // 默认可转出，后续会根据unlockTime更新
-            symbol,
-            decimals
-          });
-        }
+        // 转换为 Token 格式
+        const mapped: Token[] = tokensData.map((token: any) => ({
+          contractAddress: token.contractAddress,
+          amount: token.amount,
+          balanceValue: token.balanceValue,
+          marketCap: token.marketCap,
+          priceChange24h: token.priceChange24h,
+          canTransfer: true, // 默认可转出，后续会根据锁定状态更新
+          symbol: token.symbol,
+          decimals: token.decimals
+        }));
 
         if (mounted) {
           setTokens(mapped);
         }
       } catch (err) {
         if ((err as any)?.name === 'AbortError') return;
-        console.error('Fetch Chainbase error:', err);
+        console.error('获取余额数据失败:', err);
         if (mounted) {
-          setTokensError('无法从 Chainbase 获取代币数据');
+          setTokensError('无法获取代币数据');
           setTokens([]);
         }
       } finally {
         if (mounted) {
           setIsLoadingTokens(false);
-          // 首次加载完成后，标记为非首次加载
           isFirstLoadRef.current = false;
         }
       }
