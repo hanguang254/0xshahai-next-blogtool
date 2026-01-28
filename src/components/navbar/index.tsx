@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import {Navbar, NavbarBrand, NavbarContent, NavbarItem, Link, Button, NavbarMenuItem, NavbarMenu, NavbarMenuToggle} from "@heroui/react";
 import {AcmeLogo} from "./AcmeLogo.jsx";
-import { useRouter } from "next/router.js";
+import { useRouter } from "next/router";
+import NextLink from "next/link";
 import styles from './index.module.css'
 import { motion } from 'framer-motion'
 
@@ -11,7 +12,6 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [activeIndex, setActiveIndex] = useState<number>(0);
   const router = useRouter(); // 获取路由信息
   
   
@@ -23,25 +23,18 @@ export default function App() {
   ];
 
 
+  const activeIndex = menuItems.findIndex((item) => item.route === router.pathname);
+
   useEffect(() => {
-    const handleHashChange = () => {
-      // 获取当前哈希路由
-      const hashRoute = window.location.hash.substring(1);
-      // 使用 router.replace 触发路由变化
-      router.replace(hashRoute, undefined, { shallow: true });
-    };
-
-    // 添加哈希路由变化事件监听
-    window.addEventListener("hashchange", handleHashChange);
-
+    const handleRouteChange = () => setIsMenuOpen(false);
+    router.events.on("routeChangeComplete", handleRouteChange);
     return () => {
-      // 在组件卸载时移除事件监听
-      window.removeEventListener("hashchange", handleHashChange);
+      router.events.off("routeChangeComplete", handleRouteChange);
     };
-  }, [router]);
+  }, [router.events]);
 
   return (
-    <Navbar onMenuOpenChange={setIsMenuOpen} className={styles.Navbar}>
+    <Navbar isMenuOpen={isMenuOpen} onMenuOpenChange={setIsMenuOpen} className={styles.Navbar}>
       <NavbarContent>
         <NavbarMenuToggle
           aria-label={isMenuOpen ? "Close menu" : "Open menu"}
@@ -60,13 +53,13 @@ export default function App() {
             const isActive = activeIndex === index;
 
             return (
-              <a
+              <NextLink
                 key={`${item.label}-${index}`}
-                href={`#${item.route}`}
-                onClick={() => setActiveIndex(index)}
+                href={item.route}
                 onMouseEnter={() => setHoveredIndex(index)}
                 onMouseLeave={() => setHoveredIndex(null)}
                 className="relative rounded-full px-4 py-2 text-sm font-medium text-white/70 transition-colors hover:text-white"
+                aria-current={isActive ? "page" : undefined}
               >
                 <div className="relative z-10">
                   <span>{item.label}</span>
@@ -108,7 +101,7 @@ export default function App() {
                     }}
                   />
                 )}
-              </a>
+              </NextLink>
             );
           })}
         </div>
@@ -125,10 +118,12 @@ export default function App() {
         {menuItems.map((item, index) => (
           <NavbarMenuItem key={`${item.label}-${index}`}>
             <Link
+              as={NextLink}
               color="foreground"
               className="w-full"
               href={item.route}
               size="lg"
+              onClick={() => setIsMenuOpen(false)}
             >
               {item.label}
             </Link>
