@@ -144,82 +144,70 @@ export default function Wallet() {
 
   // 已移除本地的余额和市场数据获取函数，统一使用 /api/balance 接口
 
+  // 提取 fetchBalances 为独立函数，便于手动刷新
+  const fetchBalances = useCallback(async () => {
+    if (!CONTRACT_ADDRESS) return;
+    try {
+      // 只在首次加载时显示加载状态
+      if (isFirstLoadRef.current) {
+        setIsLoadingTokens(true);
+      }
+      setTokensError(null);
+
+      // 调用统一的 balance 接口
+      const response = await fetch(`/api/balance?address=${CONTRACT_ADDRESS}`);
+
+      if (!response.ok) {
+        throw new Error(`Balance API 返回错误: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const tokensData = data.tokens || [];
+
+      if (!Array.isArray(tokensData) || tokensData.length === 0) {
+        setTokens([]);
+        setIsLoadingTokens(false);
+        isFirstLoadRef.current = false;
+        return;
+      }
+
+      // 转换为 Token 格式
+      const mapped: Token[] = tokensData.map((token: any) => ({
+        contractAddress: token.contractAddress,
+        amount: token.amount,
+        balanceValue: token.balanceValue,
+        marketCap: token.marketCap,
+        priceChange24h: token.priceChange24h,
+        canTransfer: true, // 默认可转出，后续会根据锁定状态更新
+        symbol: token.symbol,
+        decimals: token.decimals
+      }));
+
+      setTokens(mapped);
+    } catch (err) {
+      if ((err as any)?.name === 'AbortError') return;
+      console.error('获取余额数据失败:', err);
+      setTokensError('无法获取代币数据');
+      setTokens([]);
+    } finally {
+      setIsLoadingTokens(false);
+      isFirstLoadRef.current = false;
+    }
+  }, [CONTRACT_ADDRESS]);
+
   // 从统一的 /api/balance 接口获取代币余额和价格数据
   useEffect(() => {
     // 确保只在客户端执行
     if (typeof window === 'undefined') return;
-    
-    let mounted = true;
-
-    const fetchBalances = async () => {
-      if (!CONTRACT_ADDRESS) return;
-      try {
-        if (mounted) {
-          // 只在首次加载时显示加载状态
-          if (isFirstLoadRef.current) {
-            setIsLoadingTokens(true);
-          }
-          setTokensError(null);
-        }
-
-        // 调用统一的 balance 接口
-        const response = await fetch(`/api/balance?address=${CONTRACT_ADDRESS}`);
-
-        if (!response.ok) {
-          throw new Error(`Balance API 返回错误: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        const tokensData = data.tokens || [];
-
-        if (!Array.isArray(tokensData) || tokensData.length === 0) {
-          if (mounted) {
-            setTokens([]);
-            setIsLoadingTokens(false);
-            isFirstLoadRef.current = false;
-          }
-          return;
-        }
-
-        // 转换为 Token 格式
-        const mapped: Token[] = tokensData.map((token: any) => ({
-          contractAddress: token.contractAddress,
-          amount: token.amount,
-          balanceValue: token.balanceValue,
-          marketCap: token.marketCap,
-          priceChange24h: token.priceChange24h,
-          canTransfer: true, // 默认可转出，后续会根据锁定状态更新
-          symbol: token.symbol,
-          decimals: token.decimals
-        }));
-
-        if (mounted) {
-          setTokens(mapped);
-        }
-      } catch (err) {
-        if ((err as any)?.name === 'AbortError') return;
-        console.error('获取余额数据失败:', err);
-        if (mounted) {
-          setTokensError('无法获取代币数据');
-          setTokens([]);
-        }
-      } finally {
-        if (mounted) {
-          setIsLoadingTokens(false);
-          isFirstLoadRef.current = false;
-        }
-      }
-    };
 
     // 首次立即拉取，然后每60秒轮询一次
     fetchBalances();
     const intervalId = setInterval(fetchBalances, 60000);
 
     return () => {
-      mounted = false;
       clearInterval(intervalId);
     };
-  }, [CONTRACT_ADDRESS]);
+  }, [fetchBalances]);
 
   // 存储每个代币的锁定状态（true=已锁定，false=未锁定）
   const [tokenLockStatus, setTokenLockStatus] = useState<Record<string, boolean>>({});
@@ -674,8 +662,10 @@ useEffect(() => {
     setAlertVariant('success'); 
     setAlertMsg('锁仓转入交易已确认');
     hasShownLockSuccessRef.current = true;
+    // 刷新代币列表数据
+    fetchBalances();
   }
-}, [lockSuccess, isLockOpen, lockHash]);
+}, [lockSuccess, isLockOpen, lockHash, fetchBalances]);
 
 
 
@@ -893,8 +883,10 @@ useEffect(() => {
       setAlertVariant('success');
       setAlertMsg('提取交易已确认');
       hasShownWithdrawSuccessRef.current = true;
+      // 刷新代币列表数据
+      fetchBalances();
     }
-  }, [withdrawSuccess, isWithdrawOpen, withdrawHash]);
+  }, [withdrawSuccess, isWithdrawOpen, withdrawHash, fetchBalances]);
 
   // 当开始新的提取时，重置成功消息标记
   useEffect(() => {
