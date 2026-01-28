@@ -80,6 +80,8 @@ export default async function handler(
   }
 
   const limit = clampLimit(req.query.limit, 100);
+  const filterChainId = 
+    typeof req.query.chainId === "string" ? req.query.chainId.toLowerCase() : undefined;
   res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
 
   try {
@@ -98,6 +100,10 @@ export default async function handler(
       const chainId = extractChainId(token);
       const tokenAddress = token.tokenAddress;
       if (chainId && tokenAddress) {
+        // 如果指定了 chainId 筛选，则只保留匹配的
+        if (filterChainId && chainId.toLowerCase() !== filterChainId) {
+          continue;
+        }
         const key = `${chainId}:${tokenAddress}`;
         if (!uniqueMap.has(key)) {
           uniqueMap.set(key, token);
