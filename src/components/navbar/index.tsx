@@ -12,6 +12,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
   const router = useRouter(); // 获取路由信息
   
   
@@ -24,6 +25,10 @@ export default function App() {
 
 
   const activeIndex = menuItems.findIndex((item) => item.route === router.pathname);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     const handleRouteChange = () => setIsMenuOpen(false);
@@ -109,7 +114,15 @@ export default function App() {
       <NavbarContent justify="end">
         <NavbarItem>
           {/* 链接按钮 */}
-          <ConnectButton label="Connect Wallet" showBalance={false} accountStatus={{smallScreen: 'avatar',largeScreen: 'full',}}  />
+          {isMounted ? (
+            <ConnectButton
+              label="Connect Wallet"
+              showBalance={false}
+              accountStatus={{ smallScreen: "avatar", largeScreen: "full" }}
+            />
+          ) : (
+            <div style={{ height: 40, width: 160 }} />
+          )}
 
         </NavbarItem>
       </NavbarContent>
