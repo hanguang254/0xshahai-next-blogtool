@@ -3,13 +3,14 @@
   height: 100vh;
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .header {
-  position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
+  position: relative;
+  margin-top: 20px;
   text-align: center;
   z-index: 10;
   color: white;
@@ -63,7 +64,7 @@
 .mapWrapper {
   width: min(1200px, 92vw);
   height: min(720px, 70vh);
-  margin: 120px auto 0;
+  margin: 24px auto 0;
   border-radius: 24px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.2);
