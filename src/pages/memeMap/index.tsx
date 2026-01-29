@@ -41,10 +41,12 @@ export default function MemeMap() {
   const [hoveredToken, setHoveredToken] = useState<TokenData | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [selectedChain, setSelectedChain] = useState<'solana' | 'bsc' | 'base'>('solana');
 
   // 获取数据的函数
-  const fetchData = () => {
-    fetch('/api/memelist?limit=100')
+  const fetchData = (chainId: string) => {
+    setLoading(true);
+    fetch(`/api/memelist?limit=100&chainId=${chainId}`)
       .then(res => res.json())
       .then(data => {
         const items = data.items || [];
@@ -55,7 +57,7 @@ export default function MemeMap() {
         // 调试信息：统计图片情况
         const withIcon = items.filter((t: TokenData) => t.iconUrl && t.iconUrl.trim() !== '').length;
         const withoutIcon = items.length - withIcon;
-        console.log(`📊 代币数据加载完成: 总数=${items.length}, 有图片=${withIcon}, 无图片=${withoutIcon}`);
+        console.log(`📊 代币数据加载完成 [${chainId.toUpperCase()}]: 总数=${items.length}, 有图片=${withIcon}, 无图片=${withoutIcon}`);
       })
       .catch(err => {
         console.error('获取数据失败:', err);
@@ -65,16 +67,16 @@ export default function MemeMap() {
 
   useEffect(() => {
     // 首次加载数据
-    fetchData();
+    fetchData(selectedChain);
 
     // 设置定时器，每60秒刷新一次
     const interval = setInterval(() => {
-      fetchData();
+      fetchData(selectedChain);
     }, 60000); // 60000ms = 1分钟
 
     // 清理定时器
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedChain]);
 
   useEffect(() => {
     if (!tokens.length || !svgRef.current) return;
@@ -383,6 +385,31 @@ export default function MemeMap() {
       <div className={styles.header}>
         <h1>Meme代币市值气泡图</h1>
         <p>气泡大小代表市值 · 悬停查看详情 · 点击跳转DexScreener</p>
+        
+        <div className={styles.chainSelector}>
+          <button 
+            className={`${styles.chainButton} ${selectedChain === 'solana' ? styles.active : ''}`}
+            onClick={() => setSelectedChain('solana')}
+          >
+            <span className={styles.chainIcon}>◎</span>
+            Solana
+          </button>
+          <button 
+            className={`${styles.chainButton} ${selectedChain === 'bsc' ? styles.active : ''}`}
+            onClick={() => setSelectedChain('bsc')}
+          >
+            <span className={styles.chainIcon}>💎</span>
+            BSC
+          </button>
+          <button 
+            className={`${styles.chainButton} ${selectedChain === 'base' ? styles.active : ''}`}
+            onClick={() => setSelectedChain('base')}
+          >
+            <span className={styles.chainIcon}>🔵</span>
+            Base
+          </button>
+        </div>
+        
         <div className={styles.updateInfo}>
           <span>🔄 自动刷新：每分钟</span>
           <span>最后更新：{formatUpdateTime(lastUpdate)}</span>
