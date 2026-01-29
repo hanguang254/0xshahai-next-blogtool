@@ -130,6 +130,7 @@ export default async function handler(
       name?: string;
       marketCap?: number;
       pairAddress?: string;
+      pairCreatedAt?: number;
       priceChange?: { m5?: number; h1?: number; h24?: number };
       score?: number;
       url?: string;
@@ -144,6 +145,7 @@ export default async function handler(
       const chainId = extractChainId(token);
       let marketCap: number | undefined;
       let pairAddress: string | undefined;
+      let pairCreatedAt: number | undefined;
       let priceChange: { m5?: number; h1?: number; h24?: number } | undefined;
       let label: string | undefined;
       let symbol: string | undefined;
@@ -160,6 +162,10 @@ export default async function handler(
             pairAddress =
               typeof pair.pairAddress === "string"
                 ? pair.pairAddress
+                : undefined;
+            pairCreatedAt =
+              typeof pair.pairCreatedAt === "number"
+                ? pair.pairCreatedAt
                 : undefined;
             const baseToken = pair.baseToken as
               | Record<string, unknown>
@@ -215,7 +221,7 @@ export default async function handler(
 
       // 图片优先级：token.icon > pair的imageUrl
       const finalIcon = formatIconUrl(token.icon) || iconFromPair;
-
+ 
       itemsWithDetails.push({
         chainId: chainId!,
         tokenAddress: token.tokenAddress!,
@@ -224,6 +230,7 @@ export default async function handler(
         name,
         marketCap,
         pairAddress,
+        pairCreatedAt,
         priceChange,
         score,
         url,

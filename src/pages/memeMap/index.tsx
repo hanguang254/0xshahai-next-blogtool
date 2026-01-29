@@ -11,6 +11,7 @@ interface TokenData {
   name?: string;
   marketCap?: number;
   pairAddress?: string;
+  pairCreatedAt?: number;
   priceChange?: { m5?: number; h1?: number; h24?: number };
   score?: number;
   url?: string;
@@ -99,12 +100,33 @@ export default function MemeMap() {
       .filter(t => t.marketCap && t.marketCap > 0)
       .filter(t => typeof t.priceChange?.m5 === 'number')
       .filter(t => {
-        // 新盘模式：24小时涨幅 > 200% 且 1小时涨幅 > 100%
+        // 新盘模式：同时满足三个条件
+        // 1. pairCreatedAt > 昨天凌晨12点
+        // 2. 24小时涨幅 > 200%
+        // 3. 1小时涨幅 > 50%
         if (displayMode === 'new') {
+          // 条件1：检查创建时间
+          if (!t.pairCreatedAt) return false;
+          
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          yesterday.setHours(0, 0, 0, 0);
+          const yesterdayMidnight = yesterday.getTime();
+          
+          const pairCreatedAtMs = t.pairCreatedAt < 10000000000 
+            ? t.pairCreatedAt * 1000 
+            : t.pairCreatedAt;
+          
+          const isNewPair = pairCreatedAtMs > yesterdayMidnight;
+          
+          // 条件2和3：检查涨幅
           const h24 = t.priceChange?.h24;
           const h1 = t.priceChange?.h1;
-          return typeof h24 === 'number' && h24 > 200 && 
-                 typeof h1 === 'number' && h1 > 50;
+          const hasGoodGrowth = typeof h24 === 'number' && h24 > 200 && 
+                                typeof h1 === 'number' && h1 > 50;
+          
+          // 三个条件都要满足
+          return isNewPair && hasGoodGrowth;
         }
         // 老盘模式：显示所有
         return true;
@@ -367,6 +389,21 @@ export default function MemeMap() {
     return `${sign}${num.toFixed(2)}%`;
   };
 
+  const formatCreatedAt = (timestamp?: number) => {
+    if (!timestamp) return 'N/A';
+    // 判断是秒级还是毫秒级时间戳
+    const timestampMs = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+    const date = new Date(timestampMs);
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
   const getChainName = (chainId: string) => {
     const chains: Record<string, string> = {
       'ethereum': 'Ethereum',
@@ -495,6 +532,13 @@ export default function MemeMap() {
               <span className={styles.label}>市值:</span>
               <span className={styles.value}>{formatNumber(hoveredToken.marketCap)}</span>
             </div>
+            
+            {hoveredToken.pairCreatedAt && (
+              <div className={styles.row}>
+                <span className={styles.label}>创建时间:</span>
+                <span className={styles.value}>{formatCreatedAt(hoveredToken.pairCreatedAt)}</span>
+              </div>
+            )}
             
             <div className={styles.row}>
               <span className={styles.label}>5分钟涨幅:</span>
