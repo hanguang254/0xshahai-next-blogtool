@@ -141,7 +141,7 @@
 }
 
 .mapWrapper {
-  width: min(1200px, 92vw);
+  width: min(1600px, 98vw);
   height: calc(100vh - 160px);
   max-height: 85vh;
   margin: 10px auto 0;
