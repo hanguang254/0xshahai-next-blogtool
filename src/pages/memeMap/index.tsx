@@ -73,7 +73,7 @@ export default function MemeMap() {
     // 设置定时器，每60秒刷新一次
     const interval = setInterval(() => {
       fetchData(selectedChain);
-    }, 60000); // 60000ms = 1分钟
+    }, 10000); // 60000ms = 1分钟
 
     // 清理定时器
     return () => clearInterval(interval);
