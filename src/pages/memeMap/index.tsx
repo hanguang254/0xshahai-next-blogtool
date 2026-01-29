@@ -45,14 +45,18 @@ export default function MemeMap() {
   const [displayMode, setDisplayMode] = useState<'all' | 'new'>('all'); // 'all' = 老盘, 'new' = 新盘
 
   // 获取数据的函数
-  const fetchData = (chainId: string) => {
-    setLoading(true);
+  const fetchData = (chainId: string, showLoading: boolean = false) => {
+    if (showLoading) {
+      setLoading(true);
+    }
     fetch(`/api/memelist?limit=100&chainId=${chainId}`)
       .then(res => res.json())
       .then(data => {
         const items = data.items || [];
         setTokens(items);
-        setLoading(false);
+        if (showLoading) {
+          setLoading(false);
+        }
         setLastUpdate(new Date());
         
         // 调试信息：统计图片情况
@@ -62,18 +66,20 @@ export default function MemeMap() {
       })
       .catch(err => {
         console.error('获取数据失败:', err);
-        setLoading(false);
+        if (showLoading) {
+          setLoading(false);
+        }
       });
   };
 
   useEffect(() => {
-    // 首次加载数据
-    fetchData(selectedChain);
+    // 首次加载数据（显示加载状态）
+    fetchData(selectedChain, true);
 
-    // 设置定时器，每60秒刷新一次
+    // 设置定时器，定时刷新（不显示加载状态，无感更新）
     const interval = setInterval(() => {
-      fetchData(selectedChain);
-    }, 10000); // 60000ms = 1分钟
+      fetchData(selectedChain, false);
+    }, 10000); // 10000ms = 10秒
 
     // 清理定时器
     return () => clearInterval(interval);
