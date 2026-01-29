@@ -98,7 +98,7 @@ export default function MemeMap() {
           const h24 = t.priceChange?.h24;
           const h1 = t.priceChange?.h1;
           return typeof h24 === 'number' && h24 > 200 && 
-                 typeof h1 === 'number' && h1 > 100;
+                 typeof h1 === 'number' && h1 > 50;
         }
         // 老盘模式：显示所有
         return true;
