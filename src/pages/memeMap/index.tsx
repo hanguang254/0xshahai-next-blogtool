@@ -44,6 +44,8 @@ export default function MemeMap() {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [selectedChain, setSelectedChain] = useState<'solana' | 'bsc' | 'base'>('solana');
   const [displayMode, setDisplayMode] = useState<'all' | 'new'>('all'); // 'all' = 老盘, 'new' = 新盘
+  const [copiedAddress, setCopiedAddress] = useState(false);
+  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // 获取数据的函数
   const fetchData = (chainId: string, showLoading: boolean = false) => {
@@ -83,7 +85,10 @@ export default function MemeMap() {
     }, 30000); // 10000ms = 10秒
 
     // 清理定时器
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      cancelHideTooltip(); // 清理隐藏延时器
+    };
   }, [selectedChain]);
 
   useEffect(() => {
@@ -243,6 +248,8 @@ export default function MemeMap() {
       .attr('stroke', 'transparent')
       .style('pointer-events', 'all')
       .on('mouseenter', function(event, d) {
+        cancelHideTooltip(); // 取消任何正在进行的隐藏延时
+        
         const bubbleGroup = d3.select(this.parentNode as SVGGElement);
         bubbleGroup.select('circle')
           .transition()
@@ -267,7 +274,7 @@ export default function MemeMap() {
           .attr('r', d.radius)
           .attr('stroke-width', 2);
 
-        setHoveredToken(null);
+        scheduleHideTooltip(); // 使用延迟隐藏
       })
       .on('click', function(event, d) {
         event.stopPropagation();
@@ -404,6 +411,62 @@ export default function MemeMap() {
     });
   };
 
+  const copyToClipboard = async (text: string) => {
+    try {
+      // 优先使用现代 Clipboard API
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        setCopiedAddress(true);
+        console.log('✅ 复制成功:', text);
+        setTimeout(() => setCopiedAddress(false), 2000);
+        return;
+      }
+
+      // 备用方案：使用传统的 execCommand
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      if (successful) {
+        setCopiedAddress(true);
+        console.log('✅ 复制成功 (execCommand):', text);
+        setTimeout(() => setCopiedAddress(false), 2000);
+      } else {
+        console.error('❌ 复制失败');
+      }
+    } catch (err) {
+      console.error('❌ 复制失败:', err);
+      // 即使失败也显示反馈，让用户知道点击了
+      setCopiedAddress(true);
+      setTimeout(() => setCopiedAddress(false), 2000);
+    }
+  };
+
+  // 取消隐藏延时
+  const cancelHideTooltip = () => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+  };
+
+  // 延迟隐藏悬浮框
+  const scheduleHideTooltip = () => {
+    cancelHideTooltip();
+    hideTimeoutRef.current = setTimeout(() => {
+      setHoveredToken(null);
+      setCopiedAddress(false);
+    }, 500); // 300ms 延迟，给用户时间移动鼠标到悬浮框
+  };
+
   const getChainName = (chainId: string) => {
     const chains: Record<string, string> = {
       'ethereum': 'Ethereum',
@@ -471,13 +534,13 @@ export default function MemeMap() {
               <span className={styles.modeIcon}>📊</span>
               老盘
             </button>
-            <button 
+          <button
               className={`${styles.modeButton} ${displayMode === 'new' ? styles.active : ''}`}
               onClick={() => setDisplayMode('new')}
             >
               <span className={styles.modeIcon}>🚀</span>
               新盘
-            </button>
+          </button>
           </div>
         </div>
         
@@ -503,6 +566,8 @@ export default function MemeMap() {
             left: tooltipPos.x + 10,
             top: tooltipPos.y + 10,
           }}
+          onMouseEnter={cancelHideTooltip} // 鼠标进入悬浮框时取消隐藏
+          onMouseLeave={scheduleHideTooltip} // 鼠标离开悬浮框时延迟隐藏
         >
           <div className={styles.tooltipHeader}>
             {hoveredToken.iconUrl && (
@@ -517,10 +582,22 @@ export default function MemeMap() {
           <div className={styles.tooltipContent}>
             <div className={styles.row}>
               <span className={styles.label}>合约地址:</span>
-              <span className={styles.value} title={hoveredToken.tokenAddress}>
+              <button
+                className={`${styles.value} ${styles.copyableAddress}`}
+                title={copiedAddress ? '已复制!' : '点击复制完整地址'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  console.log('🖱️ 点击了合约地址，准备复制:', hoveredToken.tokenAddress);
+                  copyToClipboard(hoveredToken.tokenAddress);
+                }}
+                type="button"
+              >
                 {hoveredToken.tokenAddress.substring(0, 6)}...
                 {hoveredToken.tokenAddress.substring(hoveredToken.tokenAddress.length - 4)}
-              </span>
+                {copiedAddress && <span className={styles.copiedIcon}> ✓ 已复制</span>}
+                {!copiedAddress && <span style={{ marginLeft: '4px', opacity: 0.6, fontSize: '0.85em' }}>📋</span>}
+              </button>
             </div>
             
             <div className={styles.row}>
@@ -578,8 +655,8 @@ export default function MemeMap() {
                 {formatPercentage(hoveredToken.priceChange?.h24)}
               </span>
             </div>
-          </div>
-          
+        </div>
+
           <div className={styles.tooltipFooter}>
             💡 点击气泡查看 DexScreener 详情
           </div>

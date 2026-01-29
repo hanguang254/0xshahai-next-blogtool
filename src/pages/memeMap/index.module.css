@@ -169,7 +169,7 @@
   backdrop-filter: blur(10px);
   border-radius: 12px;
   padding: 16px;
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 1000;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -259,6 +259,55 @@
 
 .negative {
   color: #ef4444 !important;
+}
+
+.copyableAddress {
+  cursor: pointer !important;
+  transition: all 0.2s ease;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  pointer-events: auto;
+  position: relative;
+  z-index: 10;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  outline: none;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 0.9em;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.copyableAddress:hover {
+  background: rgba(96, 165, 250, 0.2);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #60a5fa !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(96, 165, 250, 0.3);
+}
+
+.copyableAddress:active {
+  transform: translateY(0) scale(0.98);
+  background: rgba(96, 165, 250, 0.3);
+}
+
+.copiedIcon {
+  color: #10b981;
+  font-weight: bold;
+  animation: fadeInScale 0.3s ease;
+}
+
+@keyframes fadeInScale {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* 响应式设计 */
