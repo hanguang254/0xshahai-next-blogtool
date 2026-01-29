@@ -11,7 +11,7 @@ interface TokenData {
   name?: string;
   marketCap?: number;
   pairAddress?: string;
-  priceChange?: { m5?: number; h1?: number };
+  priceChange?: { m5?: number; h1?: number; h24?: number };
   score?: number;
   url?: string;
   headerImageUrl?: string;
@@ -30,7 +30,7 @@ interface BubbleNode extends d3.SimulationNodeDatum {
   iconUrl?: string;
   tokenAddress: string;
   chainId: string;
-  priceChange?: { m5?: number; h1?: number };
+  priceChange?: { m5?: number; h1?: number; h24?: number };
   radius: number;
 }
 
@@ -42,6 +42,7 @@ export default function MemeMap() {
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [selectedChain, setSelectedChain] = useState<'solana' | 'bsc' | 'base'>('solana');
+  const [displayMode, setDisplayMode] = useState<'all' | 'new'>('all'); // 'all' = 老盘, 'new' = 新盘
 
   // 获取数据的函数
   const fetchData = (chainId: string) => {
@@ -91,6 +92,17 @@ export default function MemeMap() {
     const nodes: BubbleNode[] = tokens
       .filter(t => t.marketCap && t.marketCap > 0)
       .filter(t => typeof t.priceChange?.m5 === 'number')
+      .filter(t => {
+        // 新盘模式：24小时涨幅 > 200% 且 1小时涨幅 > 100%
+        if (displayMode === 'new') {
+          const h24 = t.priceChange?.h24;
+          const h1 = t.priceChange?.h1;
+          return typeof h24 === 'number' && h24 > 200 && 
+                 typeof h1 === 'number' && h1 > 100;
+        }
+        // 老盘模式：显示所有
+        return true;
+      })
       .map(token => {
         // 使用对数scale来计算半径，避免差距过大
         const minRadius = 30;
@@ -333,7 +345,7 @@ export default function MemeMap() {
     return () => {
       simulation.stop();
     };
-  }, [tokens]);
+  }, [tokens, displayMode]);
 
   const formatNumber = (num?: number) => {
     if (!num) return 'N/A';
@@ -383,31 +395,47 @@ export default function MemeMap() {
     <div className={styles.container}>
       <AnimatedShaderBackground />
       <div className={styles.header}>
-        <h1>Meme代币市值气泡图</h1>
-        <p>气泡大小代表市值 · 悬停查看详情 · 点击跳转DexScreener</p>
-        
-        <div className={styles.chainSelector}>
-          <button 
-            className={`${styles.chainButton} ${selectedChain === 'solana' ? styles.active : ''}`}
-            onClick={() => setSelectedChain('solana')}
-          >
-            <span className={styles.chainIcon}>◎</span>
-            Solana
-          </button>
-          <button 
-            className={`${styles.chainButton} ${selectedChain === 'bsc' ? styles.active : ''}`}
-            onClick={() => setSelectedChain('bsc')}
-          >
-            <span className={styles.chainIcon}>💎</span>
-            BSC
-          </button>
-          <button 
-            className={`${styles.chainButton} ${selectedChain === 'base' ? styles.active : ''}`}
-            onClick={() => setSelectedChain('base')}
-          >
-            <span className={styles.chainIcon}>🔵</span>
-            Base
-          </button>
+        <div className={styles.filterContainer}>
+          <div className={styles.chainSelector}>
+            <button 
+              className={`${styles.chainButton} ${selectedChain === 'solana' ? styles.active : ''}`}
+              onClick={() => setSelectedChain('solana')}
+            >
+              <span className={styles.chainIcon}>◎</span>
+              Solana
+            </button>
+            <button 
+              className={`${styles.chainButton} ${selectedChain === 'bsc' ? styles.active : ''}`}
+              onClick={() => setSelectedChain('bsc')}
+            >
+              <span className={styles.chainIcon}>💎</span>
+              BSC
+            </button>
+            <button 
+              className={`${styles.chainButton} ${selectedChain === 'base' ? styles.active : ''}`}
+              onClick={() => setSelectedChain('base')}
+            >
+              <span className={styles.chainIcon}>🔵</span>
+              Base
+            </button>
+          </div>
+          
+          <div className={styles.modeSelector}>
+            <button 
+              className={`${styles.modeButton} ${displayMode === 'all' ? styles.active : ''}`}
+              onClick={() => setDisplayMode('all')}
+            >
+              <span className={styles.modeIcon}>📊</span>
+              老盘
+            </button>
+            <button 
+              className={`${styles.modeButton} ${displayMode === 'new' ? styles.active : ''}`}
+              onClick={() => setDisplayMode('new')}
+            >
+              <span className={styles.modeIcon}>🚀</span>
+              新盘
+            </button>
+          </div>
         </div>
         
         <div className={styles.updateInfo}>
@@ -485,6 +513,19 @@ export default function MemeMap() {
                 }`}
               >
                 {formatPercentage(hoveredToken.priceChange?.h1)}
+              </span>
+            </div>
+            
+            <div className={styles.row}>
+              <span className={styles.label}>24小时涨幅:</span>
+              <span 
+                className={`${styles.value} ${
+                  (hoveredToken.priceChange?.h24 || 0) >= 0 
+                    ? styles.positive 
+                    : styles.negative
+                }`}
+              >
+                {formatPercentage(hoveredToken.priceChange?.h24)}
               </span>
             </div>
           </div>

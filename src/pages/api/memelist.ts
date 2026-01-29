@@ -46,9 +46,10 @@ function extractPriceChange(pair: PairInfo | undefined) {
   
   const m5 = typeof priceChange.m5 === "number" ? priceChange.m5 : undefined;
   const h1 = typeof priceChange.h1 === "number" ? priceChange.h1 : undefined;
+  const h24 = typeof priceChange.h24 === "number" ? priceChange.h24 : undefined;
   
-  if (m5 !== undefined || h1 !== undefined) {
-    return { m5, h1 };
+  if (m5 !== undefined || h1 !== undefined || h24 !== undefined) {
+    return { m5, h1, h24 };
   }
   return undefined;
 }
@@ -129,7 +130,7 @@ export default async function handler(
       name?: string;
       marketCap?: number;
       pairAddress?: string;
-      priceChange?: { m5?: number; h1?: number };
+      priceChange?: { m5?: number; h1?: number; h24?: number };
       score?: number;
       url?: string;
       headerImageUrl?: string;
@@ -143,7 +144,7 @@ export default async function handler(
       const chainId = extractChainId(token);
       let marketCap: number | undefined;
       let pairAddress: string | undefined;
-      let priceChange: { m5?: number; h1?: number } | undefined;
+      let priceChange: { m5?: number; h1?: number; h24?: number } | undefined;
       let label: string | undefined;
       let symbol: string | undefined;
       let name: string | undefined;
