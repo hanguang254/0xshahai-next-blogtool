@@ -17,6 +17,7 @@ const BOOSTS_LATEST_URL = `${DEX_BASE}/token-boosts/latest/v1`;
 const BOOSTS_TOP_URL = `${DEX_BASE}/token-boosts/top/v1`;
 const AVE_BASE = "https://prod.ave-api.com";
 const TRENDING_URL = `${AVE_BASE}/v2/tokens/trending`;
+const AVE_PAIRS_BASE_URL = `${AVE_BASE}/v2/pairs`;
 const AVE_API_KEY =
   process.env.AVE_API_KEY ||
   "uHxe2IxOYEx3vHNpUpPtVDJVd2UTPycHLimZkAIpyMxkGS9GE84tf05VU96Uwgdm";
@@ -126,46 +127,75 @@ function shouldExcludeAveToken(token: DexBoostItem) {
 async function fetchTrendingTokens(
   chainId: string,
   page = 0,
-  pageSize = 100,
-  timeoutMs = 2500
+  pageSize = 100
 ) {
   const url = new URL(TRENDING_URL);
   url.searchParams.set("chain", chainId);
   url.searchParams.set("current_page", String(page));
   url.searchParams.set("page_size", String(pageSize));
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: { "X-API-KEY": AVE_API_KEY },
+  });
+  if (!res.ok) {
+    throw new Error(`request_failed:${res.status}`);
+  }
+  const payload = (await res.json()) as unknown;
+  return extractTrendingItems(payload);
+}
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, timeoutMs);
+function extractAveMainPair(token: DexBoostItem) {
+  const raw =
+    (token as Record<string, unknown>).main_pair ??
+    (token as Record<string, unknown>).mainPair ??
+    (token as Record<string, unknown>).pair;
+  if (typeof raw === "string" && raw.trim() !== "") {
+    return raw.trim();
+  }
+  return undefined;
+}
+
+async function fetchAvePairDetail(
+  chainId: string,
+  token: DexBoostItem
+): Promise<Record<string, unknown> | undefined> {
+  const mainPair = extractAveMainPair(token);
+  if (!mainPair) return undefined;
+
+  const pairId = `${mainPair}-${chainId}`;
+  const url = `${AVE_PAIRS_BASE_URL}/${pairId}`;
 
   try {
-    const res = await fetch(url.toString(), {
+    const res = await fetch(url, {
       method: "GET",
       headers: { "X-API-KEY": AVE_API_KEY },
-      signal: controller.signal,
     });
     if (!res.ok) {
       console.error(
-        `[API] AVE trending failed chain=${chainId} status=${res.status}`
+        `[API] ave_pair_failed url=${url} status=${res.status}`
       );
-      throw new Error(`request_failed:${res.status}`);
+      return undefined;
     }
-    const payload = (await res.json()) as unknown;
-    return extractTrendingItems(payload);
+    const raw = (await res.json()) as unknown;
+    if (!raw || typeof raw !== "object") return undefined;
+
+    const obj = raw as Record<string, unknown>;
+    // 兼容两种返回结构：直接返回pair对象，或者包在 data 里
+    const data = obj.data;
+    if (data && typeof data === "object") {
+      const dataObj = data as Record<string, unknown>;
+      const innerPair = dataObj.pair;
+      if (innerPair && typeof innerPair === "object") {
+        return innerPair as Record<string, unknown>;
+      }
+      return dataObj;
+    }
+    return obj;
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      console.warn(
-        `[API] AVE trending timeout chain=${chainId} timeoutMs=${timeoutMs}`
-      );
-    } else {
-      console.error(
-        `[API] AVE trending error chain=${chainId} err=${(err as Error).message}`
-      );
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
+    console.error(
+      `[API] ave_pair_fetch_error pairId=${pairId} error=${String(err)}`
+    );
+    return undefined;
   }
 }
 
@@ -376,6 +406,7 @@ export default async function handler(
       marketCap?: number;
       pairAddress?: string;
       pairCreatedAt?: number;
+      created_at?: number | null;
       priceChange?: { m5?: number; h1?: number; h24?: number };
       score?: number;
       url?: string;
@@ -399,6 +430,9 @@ export default async function handler(
       }
 
       const chainId = extractChainId(token);
+      const isAveSource =
+        Array.isArray(token.sources) &&
+        token.sources.includes("ave_trending");
       let marketCap: number | undefined;
       let pairAddress: string | undefined;
       let pairCreatedAt: number | undefined;
@@ -408,70 +442,140 @@ export default async function handler(
       let name: string | undefined;
       let error: string | undefined;
       let iconFromPair: string | undefined;
+      let aveCreatedAt: number | undefined;
 
       try {
         if (chainId && typeof token.tokenAddress === "string") {
-          const pair = await fetchPairByToken(chainId, token.tokenAddress);
-          if (pair) {
-            marketCap = extractMarketCap(pair);
-            priceChange = extractPriceChange(pair);
-            pairAddress =
-              typeof pair.pairAddress === "string"
-                ? pair.pairAddress
-                : undefined;
-            pairCreatedAt =
-              typeof pair.pairCreatedAt === "number"
-                ? pair.pairCreatedAt
-                : undefined;
-            const baseToken = pair.baseToken as
-              | Record<string, unknown>
-              | undefined;
-            label =
-              baseToken && typeof baseToken.name === "string"
-                ? baseToken.name
-                : undefined;
-            symbol =
-              baseToken && typeof baseToken.symbol === "string"
-                ? baseToken.symbol
-                : undefined;
-            name = label;
-
-            // 尝试从多个地方获取图片
-            // 1. 从pair的info中获取
-            const info = pair.info as Record<string, unknown> | undefined;
-            if (info && typeof info.imageUrl === "string") {
-              iconFromPair = info.imageUrl;
-            }
-
-            // 2. 从pair的profile中获取
-            if (!iconFromPair) {
-              const profile = pair.profile as
-                | Record<string, unknown>
-                | undefined;
-              if (profile && typeof profile.icon === "string") {
-                iconFromPair = formatIconUrl(profile.icon);
+          if (isAveSource) {
+            // AVE 来源的代币优先用 AVE 的 pair 接口
+            const avePair = await fetchAvePairDetail(chainId, token);
+            if (avePair) {
+              const mcRaw = avePair.market_cap as unknown;
+              if (typeof mcRaw === "number") {
+                marketCap = mcRaw;
+              } else if (typeof mcRaw === "string" && mcRaw.trim() !== "") {
+                const normalized = mcRaw.replace(/[, _]/g, "");
+                const n = Number(normalized);
+                if (Number.isFinite(n)) marketCap = n;
               }
-            }
 
-            // 3. 从baseToken中获取
-            if (!iconFromPair && baseToken) {
-              if (typeof baseToken.logo === "string") {
-                iconFromPair = baseToken.logo;
-              } else if (typeof baseToken.image === "string") {
-                iconFromPair = baseToken.image;
+              const m5Raw = (avePair as Record<string, unknown>)
+                .price_change_5m;
+              const h1Raw = (avePair as Record<string, unknown>)
+                .price_change_1h;
+              const h24Raw = (avePair as Record<string, unknown>)
+                .price_change_24h;
+              const m5 =
+                typeof m5Raw === "number" ? m5Raw : Number(m5Raw ?? NaN);
+              const h1 =
+                typeof h1Raw === "number" ? h1Raw : Number(h1Raw ?? NaN);
+              const h24 =
+                typeof h24Raw === "number" ? h24Raw : Number(h24Raw ?? NaN);
+              if (
+                Number.isFinite(m5) ||
+                Number.isFinite(h1) ||
+                Number.isFinite(h24)
+              ) {
+                priceChange = {
+                  m5: Number.isFinite(m5) ? m5 : undefined,
+                  h1: Number.isFinite(h1) ? h1 : undefined,
+                  h24: Number.isFinite(h24) ? h24 : undefined,
+                };
               }
+
+              pairAddress =
+                typeof avePair.pair === "string" ? avePair.pair : undefined;
+              pairCreatedAt =
+                typeof avePair.created_at === "number"
+                  ? avePair.created_at
+                  : undefined;
+              aveCreatedAt = pairCreatedAt;
+
+              // 名称和符号优先使用 AVE / trending 自己的数据
+              const aveName = (token as Record<string, unknown>).name;
+              const aveSymbol = (token as Record<string, unknown>).symbol;
+              if (!name && typeof aveName === "string") {
+                name = aveName;
+              }
+              if (!symbol && typeof aveSymbol === "string") {
+                symbol = aveSymbol;
+              }
+              if (!label) {
+                label = name;
+              }
+            } else {
+              error = "ave_pair_not_found";
             }
           } else {
-            error = "pair_not_found";
+            // 其他来源依然走 Dexscreener 的 token-pairs
+            const pair = await fetchPairByToken(chainId, token.tokenAddress);
+            if (pair) {
+              marketCap = extractMarketCap(pair);
+              priceChange = extractPriceChange(pair);
+              pairAddress =
+                typeof pair.pairAddress === "string"
+                  ? pair.pairAddress
+                  : undefined;
+              pairCreatedAt =
+                typeof pair.pairCreatedAt === "number"
+                  ? pair.pairCreatedAt
+                  : undefined;
+              const baseToken = pair.baseToken as
+                | Record<string, unknown>
+                | undefined;
+              label =
+                baseToken && typeof baseToken.name === "string"
+                  ? baseToken.name
+                  : undefined;
+              symbol =
+                baseToken && typeof baseToken.symbol === "string"
+                  ? baseToken.symbol
+                  : undefined;
+              name = label;
+
+              // 尝试从多个地方获取图片
+              // 1. 从pair的info中获取
+              const info = pair.info as Record<string, unknown> | undefined;
+              if (info && typeof info.imageUrl === "string") {
+                iconFromPair = info.imageUrl;
+              }
+
+              // 2. 从pair的profile中获取
+              if (!iconFromPair) {
+                const profile = pair.profile as
+                  | Record<string, unknown>
+                  | undefined;
+                if (profile && typeof profile.icon === "string") {
+                  iconFromPair = formatIconUrl(profile.icon);
+                }
+              }
+
+              // 3. 从baseToken中获取
+              if (!iconFromPair && baseToken) {
+                if (typeof baseToken.logo === "string") {
+                  iconFromPair = baseToken.logo;
+                } else if (typeof baseToken.image === "string") {
+                  iconFromPair = baseToken.image;
+                }
+              }
+            } else {
+              error = "pair_not_found";
+            }
           }
         } else {
           error = "missing_chain_or_token";
         }
       } catch (err) {
-        error = err instanceof Error ? err.message : "pair_fetch_failed";
+        error =
+          err instanceof Error
+            ? err.message
+            : isAveSource
+            ? "ave_pair_fetch_failed"
+            : "pair_fetch_failed";
       }
 
       if (
+        !priceChange &&
         Array.isArray(token.sources) &&
         token.sources.includes("ave_trending")
       ) {
@@ -493,7 +597,7 @@ export default async function handler(
         token.sources.length === 1 &&
         token.sources[0] === "ave_trending";
       const aveLogo =
-        isAveOnly && typeof token.logo_url === "string"
+        isAveSource && typeof token.logo_url === "string"
           ? token.logo_url
           : undefined;
       const finalIcon = aveLogo || formatIconUrl(token.icon) || iconFromPair;
@@ -508,6 +612,11 @@ export default async function handler(
         marketCap,
         pairAddress,
         pairCreatedAt,
+        created_at: isAveSource
+          ? typeof aveCreatedAt === "number"
+            ? aveCreatedAt
+            : null
+          : null,
         priceChange,
         score,
         url,
