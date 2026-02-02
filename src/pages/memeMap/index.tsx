@@ -52,7 +52,7 @@ export default function MemeMap() {
     if (showLoading) {
       setLoading(true);
     }
-    fetch(`/api/memelist?limit=100&chainId=${chainId}`)
+    fetch(`/api/memelist?limit=150&chainId=${chainId}`)
       .then(res => res.json())
       .then(data => {
         const items = data.items || [];
