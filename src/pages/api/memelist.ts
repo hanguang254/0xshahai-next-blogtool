@@ -126,21 +126,47 @@ function shouldExcludeAveToken(token: DexBoostItem) {
 async function fetchTrendingTokens(
   chainId: string,
   page = 0,
-  pageSize = 100
+  pageSize = 100,
+  timeoutMs = 2500
 ) {
   const url = new URL(TRENDING_URL);
   url.searchParams.set("chain", chainId);
   url.searchParams.set("current_page", String(page));
   url.searchParams.set("page_size", String(pageSize));
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    headers: { "X-API-KEY": AVE_API_KEY },
-  });
-  if (!res.ok) {
-    throw new Error(`request_failed:${res.status}`);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      headers: { "X-API-KEY": AVE_API_KEY },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.error(
+        `[API] AVE trending failed chain=${chainId} status=${res.status}`
+      );
+      throw new Error(`request_failed:${res.status}`);
+    }
+    const payload = (await res.json()) as unknown;
+    return extractTrendingItems(payload);
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      console.warn(
+        `[API] AVE trending timeout chain=${chainId} timeoutMs=${timeoutMs}`
+      );
+    } else {
+      console.error(
+        `[API] AVE trending error chain=${chainId} err=${(err as Error).message}`
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  const payload = (await res.json()) as unknown;
-  return extractTrendingItems(payload);
 }
 
 function extractMarketCap(pair: PairInfo | undefined) {
