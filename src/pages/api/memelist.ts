@@ -42,6 +42,7 @@ function withSource(items: DexBoostItem[], source: string) {
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { method: "GET" });
   if (!res.ok) {
+    console.error(`[API] request_failed url=${url} status=${res.status}`);
     throw new Error(`request_failed:${res.status}`);
   }
   return res.json() as Promise<T>;
@@ -116,7 +117,8 @@ function extractAveMarketCap(token: DexBoostItem) {
 function shouldExcludeAveToken(token: DexBoostItem) {
   const chainId = extractChainId(token)?.toLowerCase();
   if (!chainId) return false;
-  if (chainId !== "bsc" && chainId !== "base") return false;
+  if (chainId !== "bsc" && chainId !== "base" && chainId !== "solana")
+    return false;
   const marketCap = extractAveMarketCap(token);
   return typeof marketCap === "number" && marketCap > 60_000_000;
 }
@@ -221,6 +223,31 @@ async function fetchPairByToken(chainId: string, tokenAddress: string) {
   return pairs?.[0];
 }
 
+// 简单的并发控制，避免一次性打爆 Dexscreener
+async function processWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  let index = 0;
+
+  async function runWorker() {
+    while (index < items.length) {
+      const currentIndex = index++;
+      const item = items[currentIndex];
+      const result = await worker(item, currentIndex);
+      results.push(result);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () =>
+    runWorker()
+  );
+  await Promise.all(workers);
+  return results;
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -301,11 +328,19 @@ export default async function handler(
     }
 
     const uniqueTokens = Array.from(uniqueMap.values());
-    
+
+    // 为了避免对 token-pairs 做过多请求，只对前 N 个 token 做详细补充
+    const MAX_ENRICH_FACTOR = 2; // 最多 enrich limit * 2 个 token
+    const tokensToEnrich = uniqueTokens.slice(0, limit * MAX_ENRICH_FACTOR);
+
     // 调试：检查原始数据中有多少包含icon字段
-    const tokensWithIcon = uniqueTokens.filter(t => t.icon && typeof t.icon === 'string').length;
-    console.log(`[API] 📷 原始数据: 总数=${uniqueTokens.length}, 包含icon字段=${tokensWithIcon}`);
-    
+    const tokensWithIcon = uniqueTokens.filter(
+      (t) => t.icon && typeof t.icon === "string"
+    ).length;
+    console.log(
+      `[API] 📷 原始数据: 总数=${uniqueTokens.length}, 待补充=${tokensToEnrich.length}, 包含icon字段=${tokensWithIcon}`
+    );
+
     const itemsWithDetails: Array<{
       chainId: string;
       tokenAddress: string;
@@ -327,7 +362,16 @@ export default async function handler(
       sources?: string[];
     }> = [];
 
-    for (const token of uniqueTokens) {
+    const ENRICH_CONCURRENCY = 8;
+    const ENRICH_SOFT_TIMEOUT_MS = 7000;
+    const enrichStart = Date.now();
+
+    await processWithConcurrency(tokensToEnrich, ENRICH_CONCURRENCY, async (token) => {
+      if (Date.now() - enrichStart > ENRICH_SOFT_TIMEOUT_MS) {
+        // 超过软超时，不再继续打外部接口，直接跳过
+        return;
+      }
+
       const chainId = extractChainId(token);
       let marketCap: number | undefined;
       let pairAddress: string | undefined;
@@ -365,22 +409,24 @@ export default async function handler(
                 ? baseToken.symbol
                 : undefined;
             name = label;
-            
+
             // 尝试从多个地方获取图片
             // 1. 从pair的info中获取
             const info = pair.info as Record<string, unknown> | undefined;
             if (info && typeof info.imageUrl === "string") {
               iconFromPair = info.imageUrl;
             }
-            
+
             // 2. 从pair的profile中获取
             if (!iconFromPair) {
-              const profile = pair.profile as Record<string, unknown> | undefined;
+              const profile = pair.profile as
+                | Record<string, unknown>
+                | undefined;
               if (profile && typeof profile.icon === "string") {
                 iconFromPair = formatIconUrl(profile.icon);
               }
             }
-            
+
             // 3. 从baseToken中获取
             if (!iconFromPair && baseToken) {
               if (typeof baseToken.logo === "string") {
@@ -399,7 +445,10 @@ export default async function handler(
         error = err instanceof Error ? err.message : "pair_fetch_failed";
       }
 
-      if (Array.isArray(token.sources) && token.sources.includes("ave_trending")) {
+      if (
+        Array.isArray(token.sources) &&
+        token.sources.includes("ave_trending")
+      ) {
         const avePriceChange = extractAvePriceChange(token);
         if (avePriceChange) {
           priceChange = avePriceChange;
@@ -439,12 +488,13 @@ export default async function handler(
         headerImageUrl: formatHeaderUrl(token.header),
         iconUrl: finalIcon,
         claimDate,
-        links: aveLinks ?? (Array.isArray(token.links) ? token.links : undefined),
+        links:
+          aveLinks ?? (Array.isArray(token.links) ? token.links : undefined),
         source: typeof token.source === "string" ? token.source : undefined,
         sources: Array.isArray(token.sources) ? token.sources : undefined,
         error,
       });
-    }
+    });
 
     // 二次过滤：对来自 AVE 的 bsc/base，大市值直接排除
     const filteredItemsWithDetails = itemsWithDetails.filter((item) => {
@@ -452,7 +502,7 @@ export default async function handler(
       const isAveSource =
         Array.isArray(item.sources) && item.sources.includes("ave_trending");
       const isTargetChain =
-        chainId === "bsc" || chainId === "base";
+        chainId === "bsc" || chainId === "base" || chainId === "solana";
       const mc =
         typeof item.marketCap === "number" ? item.marketCap : undefined;
 
