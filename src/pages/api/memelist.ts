@@ -95,6 +95,32 @@ function extractTrendingItems(payload: unknown): DexBoostItem[] {
   return [];
 }
 
+function extractAveMarketCap(token: DexBoostItem) {
+  const candidates = [
+    token.market_cap,
+    (token as Record<string, unknown>).marketCap,
+    (token as Record<string, unknown>).market_cap_usd,
+    (token as Record<string, unknown>).marketCapUsd,
+  ];
+  for (const raw of candidates) {
+    if (typeof raw === "number") return raw;
+    if (typeof raw === "string" && raw.trim() !== "") {
+      const normalized = raw.replace(/[, _]/g, "");
+      const n = Number(normalized);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return undefined;
+}
+
+function shouldExcludeAveToken(token: DexBoostItem) {
+  const chainId = extractChainId(token)?.toLowerCase();
+  if (!chainId) return false;
+  if (chainId !== "bsc" && chainId !== "base") return false;
+  const marketCap = extractAveMarketCap(token);
+  return typeof marketCap === "number" && marketCap > 60_000_000;
+}
+
 async function fetchTrendingTokens(
   chainId: string,
   page = 0,
@@ -224,13 +250,24 @@ export default async function handler(
         : Promise.resolve([]),
     ]);
 
+    const excludedAveCount = trendingTokens.filter(shouldExcludeAveToken).length;
+    if (excludedAveCount > 0) {
+      console.log(
+        `[API] 🚫 AVE过滤: bsc/base 市值>60m 排除=${excludedAveCount}`
+      );
+    }
+
+    const filteredTrendingTokens = trendingTokens.filter(
+      (token) => !shouldExcludeAveToken(token)
+    );
+
     // 合并所有数据并去重（根据 chainId + tokenAddress）
-  const allTokens = [
+    const allTokens = [
       ...withSource(profiles, "dexscreener_profiles"),
       ...withSource(ads, "dexscreener_ads"),
       ...withSource(boostsLatest, "dexscreener_boosts_latest"),
       ...withSource(boostsTop, "dexscreener_boosts_top"),
-      ...withSource(trendingTokens, "ave_trending"),
+      ...withSource(filteredTrendingTokens, "ave_trending"),
     ];
     const uniqueMap = new Map<string, DexBoostItem>();
     for (const token of allTokens) {
@@ -409,12 +446,29 @@ export default async function handler(
       });
     }
 
+    // 二次过滤：对来自 AVE 的 bsc/base，大市值直接排除
+    const filteredItemsWithDetails = itemsWithDetails.filter((item) => {
+      const chainId = item.chainId?.toLowerCase();
+      const isAveSource =
+        Array.isArray(item.sources) && item.sources.includes("ave_trending");
+      const isTargetChain =
+        chainId === "bsc" || chainId === "base";
+      const mc =
+        typeof item.marketCap === "number" ? item.marketCap : undefined;
+
+      // 只对 ave_trending 且 bsc/base 的代币做 >60m 过滤
+      if (isAveSource && isTargetChain && mc !== undefined && mc > 60_000_000) {
+        return false;
+      }
+      return true;
+    });
+
     // 按市值排序（从大到小）并添加 rank
-    const sorted = itemsWithDetails
+    const sorted = filteredItemsWithDetails
       .filter((item) => typeof item.marketCap === "number")
       .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0));
 
-    const withoutMarketCap = itemsWithDetails.filter(
+    const withoutMarketCap = filteredItemsWithDetails.filter(
       (item) => typeof item.marketCap !== "number"
     );
 
