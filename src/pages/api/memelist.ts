@@ -3,6 +3,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 type DexBoostItem = {
   chainId?: string;
   tokenAddress?: string;
+  source?: string;
+  sources?: string[];
   [key: string]: unknown;
 };
 
@@ -13,6 +15,11 @@ const TOKEN_PROFILES_URL = `${DEX_BASE}/token-profiles/latest/v1`;
 const ADS_LATEST_URL = `${DEX_BASE}/ads/latest/v1`;
 const BOOSTS_LATEST_URL = `${DEX_BASE}/token-boosts/latest/v1`;
 const BOOSTS_TOP_URL = `${DEX_BASE}/token-boosts/top/v1`;
+const AVE_BASE = "https://prod.ave-api.com";
+const TRENDING_URL = `${AVE_BASE}/v2/tokens/trending`;
+const AVE_API_KEY =
+  process.env.AVE_API_KEY ||
+  "uHxe2IxOYEx3vHNpUpPtVDJVd2UTPycHLimZkAIpyMxkGS9GE84tf05VU96Uwgdm";
 
 function clampLimit(value: string | string[] | undefined, max: number) {
   const n = Number(Array.isArray(value) ? value[0] : value);
@@ -24,12 +31,88 @@ function extractChainId(item: DexBoostItem) {
   return typeof item.chainId === "string" ? item.chainId : undefined;
 }
 
+function withSource(items: DexBoostItem[], source: string) {
+  return items.map((item) => ({
+    ...item,
+    source,
+    sources: item.sources ?? [source],
+  }));
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { method: "GET" });
   if (!res.ok) {
     throw new Error(`request_failed:${res.status}`);
   }
   return res.json() as Promise<T>;
+}
+
+function normalizeTrendingItem(item: Record<string, unknown>): DexBoostItem {
+  const chainId =
+    (typeof item.chainId === "string" && item.chainId) ||
+    (typeof item.chain === "string" && item.chain) ||
+    (typeof item.chain_id === "string" && item.chain_id) ||
+    undefined;
+  const tokenAddress =
+    (typeof item.tokenAddress === "string" && item.tokenAddress) ||
+    (typeof item.address === "string" && item.address) ||
+    (typeof item.token_address === "string" && item.token_address) ||
+    (typeof item.token === "string" && item.token) ||
+    undefined;
+  return { ...item, chainId, tokenAddress };
+}
+
+function extractTrendingItems(payload: unknown): DexBoostItem[] {
+  if (Array.isArray(payload)) {
+    return payload.map((item) =>
+      normalizeTrendingItem(item as Record<string, unknown>)
+    );
+  }
+  if (payload && typeof payload === "object") {
+    const obj = payload as Record<string, unknown>;
+    const keys = ["data", "items", "tokens", "result"];
+    for (const key of keys) {
+      const value = obj[key];
+      if (Array.isArray(value)) {
+        return value.map((item) =>
+          normalizeTrendingItem(item as Record<string, unknown>)
+        );
+      }
+      if (value && typeof value === "object") {
+        const nested = value as Record<string, unknown>;
+        const nestedKeys = ["tokens", "items", "data", "result"];
+        for (const nestedKey of nestedKeys) {
+          const nestedValue = nested[nestedKey];
+          if (Array.isArray(nestedValue)) {
+            return nestedValue.map((item) =>
+              normalizeTrendingItem(item as Record<string, unknown>)
+            );
+          }
+        }
+      }
+    }
+  }
+  return [];
+}
+
+async function fetchTrendingTokens(
+  chainId: string,
+  page = 0,
+  pageSize = 100
+) {
+  const url = new URL(TRENDING_URL);
+  url.searchParams.set("chain", chainId);
+  url.searchParams.set("current_page", String(page));
+  url.searchParams.set("page_size", String(pageSize));
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: { "X-API-KEY": AVE_API_KEY },
+  });
+  if (!res.ok) {
+    throw new Error(`request_failed:${res.status}`);
+  }
+  const payload = (await res.json()) as unknown;
+  return extractTrendingItems(payload);
 }
 
 function extractMarketCap(pair: PairInfo | undefined) {
@@ -54,6 +137,27 @@ function extractPriceChange(pair: PairInfo | undefined) {
   return undefined;
 }
 
+function extractAvePriceChange(token: DexBoostItem) {
+  const m5Raw = token.token_price_change_5m;
+  const h1Raw = token.token_price_change_1h;
+  const h24Raw = token.token_price_change_24h;
+  const m5 = typeof m5Raw === "number" ? m5Raw : Number(m5Raw);
+  const h1 = typeof h1Raw === "number" ? h1Raw : Number(h1Raw);
+  const h24 = typeof h24Raw === "number" ? h24Raw : Number(h24Raw);
+  if (
+    Number.isFinite(m5) ||
+    Number.isFinite(h1) ||
+    Number.isFinite(h24)
+  ) {
+    return {
+      m5: Number.isFinite(m5) ? m5 : undefined,
+      h1: Number.isFinite(h1) ? h1 : undefined,
+      h24: Number.isFinite(h24) ? h24 : undefined,
+    };
+  }
+  return undefined;
+}
+
 function formatIconUrl(icon?: unknown) {
   if (typeof icon !== "string" || icon.trim() === "") return undefined;
   const CDN_BASE = "https://cdn.dexscreener.com/cms/images";
@@ -67,6 +171,22 @@ function formatIconUrl(icon?: unknown) {
 function formatHeaderUrl(header?: unknown) {
   if (typeof header !== "string") return undefined;
   return header.includes("?") ? header : header;
+}
+
+function extractAveLinks(appendix: unknown) {
+  if (typeof appendix !== "string" || appendix.trim() === "") return undefined;
+  try {
+    const parsed = JSON.parse(appendix) as Record<string, unknown>;
+    const links: Array<{ url: string; type?: string; label?: string }> = [];
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "string" && value.trim() !== "") {
+        links.push({ url: value, type: key, label: key });
+      }
+    }
+    return links.length > 0 ? links : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function fetchPairByToken(chainId: string, tokenAddress: string) {
@@ -84,22 +204,34 @@ export default async function handler(
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
-  const limit = clampLimit(req.query.limit, 100);
+  const limit = clampLimit(req.query.limit, 150);
   const filterChainId = 
     typeof req.query.chainId === "string" ? req.query.chainId.toLowerCase() : undefined;
   res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
 
   try {
     // 同时获取四个接口的数据
-    const [profiles, ads, boostsLatest, boostsTop] = await Promise.all([
+    const [profiles, ads, boostsLatest, boostsTop, trendingTokens] =
+      await Promise.all([
       fetchJson<DexBoostItem[]>(TOKEN_PROFILES_URL).catch(() => []),
       fetchJson<DexBoostItem[]>(ADS_LATEST_URL).catch(() => []),
       fetchJson<DexBoostItem[]>(BOOSTS_LATEST_URL).catch(() => []),
       fetchJson<DexBoostItem[]>(BOOSTS_TOP_URL).catch(() => []),
+      filterChainId
+        ? fetchTrendingTokens(filterChainId, 0, Math.min(limit, 100)).catch(
+            () => []
+          )
+        : Promise.resolve([]),
     ]);
 
     // 合并所有数据并去重（根据 chainId + tokenAddress）
-    const allTokens = [...profiles, ...ads, ...boostsLatest, ...boostsTop];
+  const allTokens = [
+      ...withSource(profiles, "dexscreener_profiles"),
+      ...withSource(ads, "dexscreener_ads"),
+      ...withSource(boostsLatest, "dexscreener_boosts_latest"),
+      ...withSource(boostsTop, "dexscreener_boosts_top"),
+      ...withSource(trendingTokens, "ave_trending"),
+    ];
     const uniqueMap = new Map<string, DexBoostItem>();
     for (const token of allTokens) {
       const chainId = extractChainId(token);
@@ -110,8 +242,23 @@ export default async function handler(
           continue;
         }
         const key = `${chainId}:${tokenAddress}`;
-        if (!uniqueMap.has(key)) {
+        const existing = uniqueMap.get(key);
+        if (!existing) {
           uniqueMap.set(key, token);
+        } else {
+          const sources = new Set<string>();
+          if (Array.isArray(existing.sources)) {
+            existing.sources.forEach((s) => sources.add(s));
+          } else if (typeof existing.source === "string") {
+            sources.add(existing.source);
+          }
+          if (Array.isArray(token.sources)) {
+            token.sources.forEach((s) => sources.add(s));
+          } else if (typeof token.source === "string") {
+            sources.add(token.source);
+          }
+          existing.sources = Array.from(sources);
+          existing.source = existing.sources[0];
         }
       }
     }
@@ -139,6 +286,8 @@ export default async function handler(
       claimDate?: string;
       links?: Array<{ url: string; type?: string; label?: string }>;
       error?: string;
+      source?: string;
+      sources?: string[];
     }> = [];
 
     for (const token of uniqueTokens) {
@@ -213,6 +362,13 @@ export default async function handler(
         error = err instanceof Error ? err.message : "pair_fetch_failed";
       }
 
+      if (Array.isArray(token.sources) && token.sources.includes("ave_trending")) {
+        const avePriceChange = extractAvePriceChange(token);
+        if (avePriceChange) {
+          priceChange = avePriceChange;
+        }
+      }
+
       const url = typeof token.url === "string" ? token.url : undefined;
       const score =
         typeof token.totalAmount === "number" ? token.totalAmount : undefined;
@@ -220,8 +376,17 @@ export default async function handler(
         typeof token.claimDate === "string" ? token.claimDate : undefined;
 
       // 图片优先级：token.icon > pair的imageUrl
-      const finalIcon = formatIconUrl(token.icon) || iconFromPair;
- 
+      const isAveOnly =
+        Array.isArray(token.sources) &&
+        token.sources.length === 1 &&
+        token.sources[0] === "ave_trending";
+      const aveLogo =
+        isAveOnly && typeof token.logo_url === "string"
+          ? token.logo_url
+          : undefined;
+      const finalIcon = aveLogo || formatIconUrl(token.icon) || iconFromPair;
+      const aveLinks = isAveOnly ? extractAveLinks(token.appendix) : undefined;
+
       itemsWithDetails.push({
         chainId: chainId!,
         tokenAddress: token.tokenAddress!,
@@ -237,7 +402,9 @@ export default async function handler(
         headerImageUrl: formatHeaderUrl(token.header),
         iconUrl: finalIcon,
         claimDate,
-        links: Array.isArray(token.links) ? token.links : undefined,
+        links: aveLinks ?? (Array.isArray(token.links) ? token.links : undefined),
+        source: typeof token.source === "string" ? token.source : undefined,
+        sources: Array.isArray(token.sources) ? token.sources : undefined,
         error,
       });
     }
