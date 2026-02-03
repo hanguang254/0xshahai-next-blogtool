@@ -63,6 +63,7 @@ export default function MemeMap() {
   const [displayMode, setDisplayMode] = useState<'all' | 'new'>('all'); // 'all' = 老盘, 'new' = 新盘
   const [copiedAddress, setCopiedAddress] = useState(false);
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isTooltipHoveredRef = useRef(false);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -509,6 +510,7 @@ export default function MemeMap() {
   const scheduleHideTooltip = () => {
     cancelHideTooltip();
     hideTimeoutRef.current = setTimeout(() => {
+      if (isTooltipHoveredRef.current) return;
       setHoveredToken(null);
       setCopiedAddress(false);
     }, 500); // 300ms 延迟，给用户时间移动鼠标到悬浮框
@@ -607,8 +609,14 @@ export default function MemeMap() {
             left: tooltipPos.x + 10,
             top: tooltipPos.y + 10,
           }}
-          onMouseEnter={cancelHideTooltip} // 鼠标进入悬浮框时取消隐藏
-          onMouseLeave={scheduleHideTooltip} // 鼠标离开悬浮框时延迟隐藏
+          onMouseEnter={() => {
+            isTooltipHoveredRef.current = true;
+            cancelHideTooltip();
+          }}
+          onMouseLeave={() => {
+            isTooltipHoveredRef.current = false;
+            scheduleHideTooltip();
+          }}
         >
           <div className={styles.tooltipHeader}>
             {hoveredToken.iconUrl && (
