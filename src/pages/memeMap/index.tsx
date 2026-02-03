@@ -64,6 +64,27 @@ export default function MemeMap() {
   const [copiedAddress, setCopiedAddress] = useState(false);
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevHtmlHeight = html.style.height;
+    const prevBodyHeight = body.style.height;
+
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    html.style.height = '100%';
+    body.style.height = '100%';
+
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      html.style.height = prevHtmlHeight;
+      body.style.height = prevBodyHeight;
+    };
+  }, []);
+
   // 获取数据的函数
   const fetchData = (chainId: string, showLoading: boolean = false) => {
     if (showLoading) {
@@ -526,47 +547,41 @@ export default function MemeMap() {
   return (
     <div className={styles.container}>
       <AnimatedShaderBackground />
-      <div className={styles.header}>
+        <div className={styles.header}>
         <div className={styles.filterContainer}>
-          <div className={styles.chainSelector}>
-            <button 
-              className={`${styles.chainButton} ${selectedChain === 'solana' ? styles.active : ''}`}
-              onClick={() => setSelectedChain('solana')}
-            >
-              <span className={styles.chainIcon}>◎</span>
-              Solana
-            </button>
-            <button 
-              className={`${styles.chainButton} ${selectedChain === 'bsc' ? styles.active : ''}`}
-              onClick={() => setSelectedChain('bsc')}
-            >
-              <span className={styles.chainIcon}>💎</span>
-              BSC
-            </button>
-            <button 
-              className={`${styles.chainButton} ${selectedChain === 'base' ? styles.active : ''}`}
-              onClick={() => setSelectedChain('base')}
-            >
-              <span className={styles.chainIcon}>🔵</span>
-              Base
-            </button>
-          </div>
-          
-          <div className={styles.modeSelector}>
-            <button 
-              className={`${styles.modeButton} ${displayMode === 'all' ? styles.active : ''}`}
-              onClick={() => setDisplayMode('all')}
-            >
-              <span className={styles.modeIcon}>📊</span>
-              老盘
-            </button>
-          <button
-              className={`${styles.modeButton} ${displayMode === 'new' ? styles.active : ''}`}
-              onClick={() => setDisplayMode('new')}
-            >
-              <span className={styles.modeIcon}>🚀</span>
-              新盘
-          </button>
+          <div className={styles.filterRow}>
+            <div className={styles.chainSelect}>
+              <span className={styles.chainLabel}>网络</span>
+              <div className={styles.selectWrap}>
+                <select
+                  className={styles.chainDropdown}
+                  value={selectedChain}
+                  onChange={(event) => setSelectedChain(event.target.value as 'solana' | 'bsc' | 'base')}
+                >
+                  <option value="solana">◎ Solana</option>
+                  <option value="bsc">💎 BSC</option>
+                  <option value="base">🔵 Base</option>
+                </select>
+                <span className={styles.selectArrow}>▾</span>
+              </div>
+            </div>
+
+            <div className={styles.modeSelector}>
+              <button 
+                className={`${styles.modeButton} ${displayMode === 'all' ? styles.active : ''}`}
+                onClick={() => setDisplayMode('all')}
+              >
+                <span className={styles.modeIcon}>📊</span>
+                老盘
+              </button>
+              <button
+                className={`${styles.modeButton} ${displayMode === 'new' ? styles.active : ''}`}
+                onClick={() => setDisplayMode('new')}
+              >
+                <span className={styles.modeIcon}>🚀</span>
+                新盘
+              </button>
+            </div>
           </div>
         </div>
         
