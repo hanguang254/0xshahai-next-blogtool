@@ -3,6 +3,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 const allowedHosts = new Set([
   'cdn.dexscreener.com',
   'iconaves.com',
+  'www.iconaves.com',
 ]);
 
 const isAllowedUrl = (value: string) => {
