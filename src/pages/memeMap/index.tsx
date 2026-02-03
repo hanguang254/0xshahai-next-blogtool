@@ -35,6 +35,20 @@ interface BubbleNode extends d3.SimulationNodeDatum {
   radius: number;
 }
 
+const normalizeIconUrl = (iconUrl?: string) => {
+  if (typeof iconUrl !== 'string') return undefined;
+  const trimmed = iconUrl.trim();
+  if (!trimmed) return undefined;
+  if (!/^https?:\/\//i.test(trimmed)) return trimmed;
+
+  const lower = trimmed.toLowerCase();
+  const shouldProxy = lower.includes('iconaves.com') || lower.endsWith('.webp');
+  if (!shouldProxy) return trimmed;
+
+  const encoded = encodeURIComponent(trimmed);
+  return `https://images.weserv.nl/?url=${encoded}&w=256&h=256&fit=cover&output=png`;
+};
+
 export default function MemeMap() {
   const svgRef = useRef<SVGSVGElement>(null);
   const [tokens, setTokens] = useState<TokenData[]>([]);
@@ -55,7 +69,10 @@ export default function MemeMap() {
     fetch(`/api/memelist?limit=100&chainId=${chainId}`)
       .then(res => res.json())
       .then(data => {
-        const items = data.items || [];
+        const items = (data.items || []).map((item: TokenData) => ({
+          ...item,
+          iconUrl: normalizeIconUrl(item.iconUrl),
+        }));
         setTokens(items);
         if (showLoading) {
           setLoading(false);
@@ -296,16 +313,17 @@ export default function MemeMap() {
       const hasValidIcon = d.iconUrl && d.iconUrl.trim() !== '' && 
                            (d.iconUrl.startsWith('http://') || d.iconUrl.startsWith('https://'));
       
-      if (hasValidIcon) {
-        // 添加图片
-        bubble.append('image')
-          .attr('href', d.iconUrl)
-          .attr('xlink:href', d.iconUrl)
-          .attr('crossorigin', 'anonymous')
-          .attr('x', -d.radius)
-          .attr('y', -d.radius)
-          .attr('width', d.radius * 2)
-          .attr('height', d.radius * 2)
+        if (hasValidIcon) {
+          // 添加图片
+          bubble.append('image')
+            .attr('href', d.iconUrl)
+            .attr('xlink:href', d.iconUrl)
+            .attr('crossorigin', 'anonymous')
+            .attr('referrerpolicy', 'no-referrer')
+            .attr('x', -d.radius)
+            .attr('y', -d.radius)
+            .attr('width', d.radius * 2)
+            .attr('height', d.radius * 2)
           .attr('clip-path', `url(#clip-${i})`)
           .attr('preserveAspectRatio', 'xMidYMid slice')
           .style('opacity', 0.9)
