@@ -154,6 +154,13 @@ function extractAveMainPair(token: DexBoostItem) {
   return undefined;
 }
 
+function extractAveLogoUrl(token: DexBoostItem) {
+  const raw =
+    (token as Record<string, unknown>).logo_url ??
+    (token as Record<string, unknown>).logoUrl;
+  return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : undefined;
+}
+
 function extractMarketCap(pair: PairInfo | undefined) {
   if (!pair) return undefined;
   const direct = pair.marketCap;
@@ -200,11 +207,18 @@ function extractAvePriceChange(token: DexBoostItem) {
 function formatIconUrl(icon?: unknown) {
   if (typeof icon !== "string" || icon.trim() === "") return undefined;
   const CDN_BASE = "https://cdn.dexscreener.com/cms/images";
-  // 如果icon已经是完整URL，直接返回
-  if (icon.startsWith('http://') || icon.startsWith('https://')) {
-    return icon;
+  let url = icon.trim();
+  // 兼容协议相对URL
+  if (url.startsWith("//")) url = `https:${url}`;
+  // 已是完整URL，直接返回
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
   }
-  return `${CDN_BASE}/${icon}?width=800&height=800&quality=90`;
+  // 处理以/开头的相对路径，以及普通相对路径
+  if (url.startsWith("/")) {
+    return `${CDN_BASE}${url}?width=800&height=800&quality=90`;
+  }
+  return `${CDN_BASE}/${url}?width=800&height=800&quality=90`;
 }
 
 function formatHeaderUrl(header?: unknown) {
@@ -295,9 +309,9 @@ export default async function handler(
       );
     }
 
-    const filteredTrendingTokens = trendingTokens.filter(
-      (token) => !shouldExcludeAveToken(token)
-    );
+    const filteredTrendingTokens = trendingTokens
+      .filter((token) => !shouldExcludeAveToken(token))
+      .filter((token) => extractAveLogoUrl(token));
 
     // 合并所有数据并去重（根据 chainId + tokenAddress）
     const allTokens = [
@@ -554,11 +568,31 @@ export default async function handler(
         typeof token.claimDate === "string" ? token.claimDate : undefined;
 
       // 图片优先级：token.icon > pair的imageUrl
-      const aveLogo =
-        isAveSource && typeof token.logo_url === "string"
-          ? token.logo_url
-          : undefined;
-      const finalIcon = aveLogo || formatIconUrl(token.icon) || iconFromPair;
+        const aveLogo =
+          isAveSource && typeof token.logo_url === "string"
+            ? token.logo_url
+            : undefined;
+        // 在 AVE 来源下，尽量覆盖更多字段以获取图标，提升展示鲁棒性
+        const candidateFromTokenIcon =
+          typeof token.icon === "string" ? formatIconUrl(token.icon) : undefined;
+        const extraIconCandidates = [
+          // 兜底：常见备用字段
+          typeof (token as any).image === "string"
+            ? formatIconUrl((token as any).image)
+            : undefined,
+          typeof (token as any).logo === "string"
+            ? formatIconUrl((token as any).logo)
+            : undefined,
+          typeof (token as any).image_url === "string"
+            ? formatIconUrl((token as any).image_url)
+            : undefined,
+          typeof (token as any).logo_url === "string"
+            ? formatIconUrl((token as any).logo_url)
+            : undefined,
+        ].filter((v): v is string => typeof v === "string" && v.trim() !== "");
+        const aveAdditionalIcon = extraIconCandidates[0];
+
+        const finalIcon = aveLogo || candidateFromTokenIcon || aveAdditionalIcon || iconFromPair;
 
       itemsWithDetails.push({
         chainId: chainId!,

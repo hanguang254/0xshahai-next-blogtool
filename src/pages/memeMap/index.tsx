@@ -52,7 +52,7 @@ export default function MemeMap() {
     if (showLoading) {
       setLoading(true);
     }
-    fetch(`/api/memelist?limit=150&chainId=${chainId}`)
+    fetch(`/api/memelist?limit=100&chainId=${chainId}`)
       .then(res => res.json())
       .then(data => {
         const items = data.items || [];
@@ -299,7 +299,9 @@ export default function MemeMap() {
       if (hasValidIcon) {
         // 添加图片
         bubble.append('image')
+          .attr('href', d.iconUrl)
           .attr('xlink:href', d.iconUrl)
+          .attr('crossorigin', 'anonymous')
           .attr('x', -d.radius)
           .attr('y', -d.radius)
           .attr('width', d.radius * 2)
@@ -571,7 +573,12 @@ export default function MemeMap() {
         >
           <div className={styles.tooltipHeader}>
             {hoveredToken.iconUrl && (
-              <img src={hoveredToken.iconUrl} alt={hoveredToken.symbol} />
+              <img
+                src={hoveredToken.iconUrl}
+                alt={hoveredToken.symbol}
+                crossOrigin="anonymous"
+                referrerPolicy="no-referrer"
+              />
             )}
             <div>
               <h3>{hoveredToken.name || hoveredToken.symbol}</h3>
