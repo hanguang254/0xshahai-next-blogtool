@@ -42,11 +42,14 @@ const normalizeIconUrl = (iconUrl?: string) => {
   if (!/^https?:\/\//i.test(trimmed)) return trimmed;
 
   const lower = trimmed.toLowerCase();
-  const shouldProxy = lower.includes('iconaves.com') || lower.endsWith('.webp');
+  const shouldProxy =
+    lower.includes('iconaves.com') ||
+    lower.includes('dexscreener.com') ||
+    lower.endsWith('.webp');
   if (!shouldProxy) return trimmed;
 
   const encoded = encodeURIComponent(trimmed);
-  return `https://images.weserv.nl/?url=${encoded}&w=256&h=256&fit=cover&output=png`;
+  return `/api/image?url=${encoded}`;
 };
 
 export default function MemeMap() {
