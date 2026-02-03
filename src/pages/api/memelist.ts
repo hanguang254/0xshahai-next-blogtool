@@ -226,6 +226,11 @@ function formatHeaderUrl(header?: unknown) {
   return header.includes("?") ? header : header;
 }
 
+function normalizeTimestamp(value: number) {
+  if (!Number.isFinite(value)) return undefined;
+  return value < 1_000_000_000_000 ? value * 1000 : value;
+}
+
 function extractAveLinks(appendix: unknown) {
   if (typeof appendix !== "string" || appendix.trim() === "") return undefined;
   try {
@@ -639,12 +644,23 @@ export default async function handler(
       return true;
     });
 
+    const nowMs = Date.now();
+    const monthAgoMs = nowMs - 30 * 24 * 60 * 60 * 1000;
+    const filteredByDate = filteredItemsWithDetails.filter((item) => {
+      const rawCreatedAt =
+        typeof item.created_at === "number" ? item.created_at : item.pairCreatedAt;
+      if (typeof rawCreatedAt !== "number") return false;
+      const createdAtMs = normalizeTimestamp(rawCreatedAt);
+      if (!createdAtMs) return false;
+      return createdAtMs >= monthAgoMs && createdAtMs <= nowMs;
+    });
+
     // 按市值排序（从大到小）并添加 rank
-    const sorted = filteredItemsWithDetails
+    const sorted = filteredByDate
       .filter((item) => typeof item.marketCap === "number")
       .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0));
 
-    const withoutMarketCap = filteredItemsWithDetails.filter(
+    const withoutMarketCap = filteredByDate.filter(
       (item) => typeof item.marketCap !== "number"
     );
 
