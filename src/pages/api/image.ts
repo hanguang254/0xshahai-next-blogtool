@@ -4,6 +4,8 @@ const allowedHosts = new Set([
   'cdn.dexscreener.com',
   'iconaves.com',
   'www.iconaves.com',
+  'www.logofacade.com',
+  'logofacade.com',
 ]);
 
 const isAllowedUrl = (value: string) => {
