@@ -26,6 +26,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  const transparentPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=',
+    'base64'
+  );
+
   try {
     const response = await fetch(urlParam, {
       headers: {
@@ -34,7 +39,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     if (!response.ok) {
-      res.status(502).send('Failed to fetch image');
+      if (response.status === 404) {
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400');
+        res.status(200).send(transparentPng);
+        return;
+      }
+      res.status(response.status).send('Failed to fetch image');
       return;
     }
 
