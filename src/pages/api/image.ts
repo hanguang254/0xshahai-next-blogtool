@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 
 const allowedHosts = new Set([
   'cdn.dexscreener.com',
+  'assets-cdn.trustwallet.com',
   'iconaves.com',
   'www.iconaves.com',
   'www.logofacade.com',

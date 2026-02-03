@@ -45,6 +45,7 @@ const normalizeIconUrl = (iconUrl?: string) => {
   const shouldProxy =
     lower.includes('iconaves.com') ||
     lower.includes('dexscreener.com') ||
+    lower.includes('assets-cdn.trustwallet.com') ||
     lower.endsWith('.webp');
   if (!shouldProxy) return trimmed;
 
@@ -220,7 +221,7 @@ export default function MemeMap() {
           name: token.name || token.symbol || 'Unknown',
           symbol: token.symbol || '',
           marketCap: token.marketCap!,
-          iconUrl: finalIconUrl,
+          iconUrl: normalizeIconUrl(finalIconUrl),
           tokenAddress: token.tokenAddress,
           chainId: token.chainId,
           priceChange: token.priceChange,
