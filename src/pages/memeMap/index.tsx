@@ -313,8 +313,11 @@ export default function MemeMap() {
         .attr('r', d.radius);
       
       // 检查是否有有效的图片URL
-      const hasValidIcon = d.iconUrl && d.iconUrl.trim() !== '' && 
-                           (d.iconUrl.startsWith('http://') || d.iconUrl.startsWith('https://'));
+      const hasValidIcon = d.iconUrl &&
+        d.iconUrl.trim() !== '' &&
+        (d.iconUrl.startsWith('http://') ||
+          d.iconUrl.startsWith('https://') ||
+          d.iconUrl.startsWith('/'));
       
         if (hasValidIcon) {
           // 添加图片
