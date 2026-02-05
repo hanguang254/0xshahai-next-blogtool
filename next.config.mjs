@@ -1,15 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     // transpilePackages: ['@ant-design/icons', 'rc-util', 'antd'],
-    async redirects() {
-        return [
-          {
-            source: '/',
-            destination: '/owner',
-            permanent: true,
-          },
-        ];
-      },
     useFileSystemPublicRoutes: true,
     useHashRouting: true,
     async headers() {
