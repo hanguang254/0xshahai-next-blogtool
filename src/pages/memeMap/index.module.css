@@ -256,6 +256,55 @@
   gap: 8px;
 }
 
+.socialLinksSection {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.socialLinksLabel {
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.socialLinks {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.socialLink {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 0.95rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: all 0.2s ease;
+}
+
+.socialLink:hover {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: rgba(147, 197, 253, 0.65);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.28);
+}
+
+.socialLink:active {
+  transform: translateY(0) scale(0.96);
+}
+
 .tooltipFooter {
   margin-top: 12px;
   padding-top: 12px;
@@ -386,6 +435,12 @@
   .tooltip {
     min-width: 240px;
     padding: 12px;
+  }
+
+  .socialLink {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
   }
 
   .tooltipHeader img {

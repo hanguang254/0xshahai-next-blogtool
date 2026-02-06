@@ -35,6 +35,13 @@ interface BubbleNode extends d3.SimulationNodeDatum {
   radius: number;
 }
 
+interface SocialLinkItem {
+  url: string;
+  type: string;
+  title: string;
+  icon: string;
+}
+
 const normalizeIconUrl = (iconUrl?: string) => {
   if (typeof iconUrl !== 'string') return undefined;
   const trimmed = iconUrl.trim();
@@ -51,6 +58,82 @@ const normalizeIconUrl = (iconUrl?: string) => {
 
   const encoded = encodeURIComponent(trimmed);
   return `/api/image?url=${encoded}`;
+};
+
+const normalizeExternalUrl = (url?: string) => {
+  if (typeof url !== 'string') return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith('//')) return `https:${trimmed}`;
+  if (/^[a-z]+:/i.test(trimmed)) return undefined;
+  if (trimmed.startsWith('/')) return undefined;
+  return `https://${trimmed}`;
+};
+
+const inferSocialType = (link: { url: string; type?: string; label?: string }) => {
+  const typeLabel = `${link.type || ''} ${link.label || ''}`.toLowerCase();
+  const safeUrl = normalizeExternalUrl(link.url);
+  let host = '';
+
+  if (safeUrl) {
+    try {
+      host = new URL(safeUrl).hostname.toLowerCase();
+    } catch {
+      host = '';
+    }
+  }
+
+  if (typeLabel.includes('twitter') || /\bx\b/.test(typeLabel)) return 'twitter';
+  if (host === 'x.com' || host.endsWith('.x.com') || host.includes('twitter.com')) return 'twitter';
+  if (typeLabel.includes('telegram') || host.includes('t.me') || host.includes('telegram.')) return 'telegram';
+  if (typeLabel.includes('discord') || host.includes('discord.gg') || host.includes('discord.com')) return 'discord';
+  if (typeLabel.includes('github') || host.includes('github.com')) return 'github';
+  if (typeLabel.includes('youtube') || host.includes('youtube.com') || host.includes('youtu.be')) return 'youtube';
+  if (typeLabel.includes('medium') || host.includes('medium.com')) return 'medium';
+  if (typeLabel.includes('docs') || typeLabel.includes('doc') || typeLabel.includes('whitepaper')) return 'docs';
+  if (typeLabel.includes('website') || typeLabel.includes('site') || typeLabel.includes('official')) return 'website';
+  if (host) return 'website';
+  return 'other';
+};
+
+const SOCIAL_META: Record<string, { title: string; icon: string }> = {
+  twitter: { title: 'X / Twitter', icon: '𝕏' },
+  telegram: { title: 'Telegram', icon: '✈' },
+  discord: { title: 'Discord', icon: '💬' },
+  github: { title: 'GitHub', icon: '🐙' },
+  youtube: { title: 'YouTube', icon: '▶' },
+  medium: { title: 'Medium', icon: 'M' },
+  docs: { title: 'Docs', icon: '📄' },
+  website: { title: 'Website', icon: '🌐' },
+  other: { title: 'Link', icon: '🔗' },
+};
+
+const buildSocialLinks = (links?: TokenData['links']): SocialLinkItem[] => {
+  if (!Array.isArray(links)) return [];
+
+  const seen = new Set<string>();
+  const socialLinks: SocialLinkItem[] = [];
+
+  links.forEach(link => {
+    const safeUrl = normalizeExternalUrl(link?.url);
+    if (!safeUrl) return;
+
+    const type = inferSocialType(link);
+    const uniqueKey = `${type}:${safeUrl}`;
+    if (seen.has(uniqueKey)) return;
+
+    seen.add(uniqueKey);
+    const meta = SOCIAL_META[type] || SOCIAL_META.other;
+    socialLinks.push({
+      url: safeUrl,
+      type,
+      title: link.label?.trim() || meta.title,
+      icon: meta.icon,
+    });
+  });
+
+  return socialLinks.slice(0, 6);
 };
 
 export default function MemeMap() {
@@ -547,6 +630,8 @@ export default function MemeMap() {
     return `${hours}:${minutes}:${seconds}`;
   };
 
+  const hoveredSocialLinks = hoveredToken ? buildSocialLinks(hoveredToken.links) : [];
+
   return (
     <div className={styles.container}>
       <AnimatedShaderBackground />
@@ -710,7 +795,28 @@ export default function MemeMap() {
                 {formatPercentage(hoveredToken.priceChange?.h24)}
               </span>
             </div>
-        </div>
+
+            {hoveredSocialLinks.length > 0 && (
+              <div className={styles.socialLinksSection}>
+                <span className={styles.socialLinksLabel}>社交媒体:</span>
+                <div className={styles.socialLinks}>
+                  {hoveredSocialLinks.map((link, index) => (
+                    <a
+                      key={`${link.type}-${link.url}-${index}`}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={styles.socialLink}
+                      title={link.title}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <span aria-hidden="true">{link.icon}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className={styles.tooltipFooter}>
             💡 点击气泡查看 DexScreener 详情
