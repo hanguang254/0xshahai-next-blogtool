@@ -9,7 +9,7 @@ type DexBoostItem = {
 };
 
 type PairInfo = Record<string, unknown>;
-type LinkItem = { url: string; type?: string; label?: string };
+type LinkItem = { url: string; type: string; label?: string };
 
 const DEX_BASE = "https://api.dexscreener.com";
 const TOKEN_PROFILES_URL = `${DEX_BASE}/token-profiles/latest/v1`;
@@ -283,19 +283,21 @@ function sanitizeLinks(input: unknown): LinkItem[] | undefined {
   for (const item of input) {
     if (!item || typeof item !== "object") continue;
     const record = item as Record<string, unknown>;
-    const normalizedUrl = normalizeLinkUrl(record.url);
-    if (!normalizedUrl) continue;
 
     const type =
       typeof record.type === "string" && record.type.trim() !== ""
         ? record.type.trim()
         : undefined;
+    if (!type) continue;
+
+    const normalizedUrl = normalizeLinkUrl(record.url);
+    if (!normalizedUrl) continue;
     const label =
       typeof record.label === "string" && record.label.trim() !== ""
         ? record.label.trim()
         : undefined;
 
-    const dedupeKey = `${normalizedUrl}|${type ?? ""}|${label ?? ""}`;
+    const dedupeKey = `${normalizedUrl}|${type}|${label ?? ""}`;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
@@ -314,7 +316,7 @@ function mergeLinks(primary?: LinkItem[], secondary?: unknown) {
   const seen = new Set<string>();
   const result: LinkItem[] = [];
   for (const item of merged) {
-    const key = `${item.url}|${item.type ?? ""}`;
+    const key = `${item.url}|${item.type}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(item);
@@ -478,7 +480,7 @@ export default async function handler(
       headerImageUrl?: string;
       iconUrl?: string;
       claimDate?: string;
-      links?: Array<{ url: string; type?: string; label?: string }>;
+      links?: Array<{ url: string; type: string; label?: string }>;
       error?: string;
       source?: string;
       sources?: string[];
