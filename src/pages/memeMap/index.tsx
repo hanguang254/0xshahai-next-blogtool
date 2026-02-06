@@ -71,17 +71,65 @@ const normalizeExternalUrl = (url?: string) => {
   return `https://${trimmed}`;
 };
 
+const isIpHost = (host: string) => {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    return host.split('.').every(part => {
+      const num = Number(part);
+      return Number.isInteger(num) && num >= 0 && num <= 255;
+    });
+  }
+  return /^\[[0-9a-f:]+\]$/i.test(host);
+};
+
+const toSafeWebsiteUrl = (url?: string) => {
+  const normalized = normalizeExternalUrl(url);
+  if (!normalized || /\s/.test(normalized)) return undefined;
+
+  try {
+    const parsed = new URL(normalized);
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol !== 'http:' && protocol !== 'https:') return undefined;
+
+    const host = parsed.hostname.toLowerCase();
+    if (!host) return undefined;
+
+    const hasDot = host.includes('.');
+    const isLocal = host === 'localhost';
+    if (!hasDot && !isLocal && !isIpHost(host)) return undefined;
+
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+};
+
 const inferSocialType = (link: { url: string; type?: string; label?: string }) => {
   const typeLabel = `${link.type || ''} ${link.label || ''}`.toLowerCase();
-  const safeUrl = normalizeExternalUrl(link.url);
+  const safeUrl = toSafeWebsiteUrl(link.url);
   let host = '';
+  let path = '';
 
   if (safeUrl) {
     try {
-      host = new URL(safeUrl).hostname.toLowerCase();
+      const parsed = new URL(safeUrl);
+      host = parsed.hostname.toLowerCase();
+      path = parsed.pathname.toLowerCase();
     } catch {
       host = '';
     }
+  }
+
+  if (
+    typeLabel.includes('description') ||
+    typeLabel.includes('name') ||
+    typeLabel.includes('symbol') ||
+    typeLabel.includes('image') ||
+    typeLabel.includes('logo') ||
+    typeLabel.includes('icon') ||
+    typeLabel.includes('avatar') ||
+    /\.(png|jpe?g|gif|webp|svg|ico|bmp|tiff?)$/i.test(path)
+  ) {
+    return 'other';
   }
 
   if (typeLabel.includes('twitter') || /\bx\b/.test(typeLabel)) return 'twitter';
@@ -109,6 +157,17 @@ const SOCIAL_META: Record<string, { title: string; icon: string }> = {
   other: { title: 'Link', icon: '🔗' },
 };
 
+const DISPLAYABLE_SOCIAL_TYPES = new Set([
+  'twitter',
+  'telegram',
+  'discord',
+  'github',
+  'youtube',
+  'medium',
+  'docs',
+  'website',
+]);
+
 const buildSocialLinks = (links?: TokenData['links']): SocialLinkItem[] => {
   if (!Array.isArray(links)) return [];
 
@@ -116,10 +175,12 @@ const buildSocialLinks = (links?: TokenData['links']): SocialLinkItem[] => {
   const socialLinks: SocialLinkItem[] = [];
 
   links.forEach(link => {
-    const safeUrl = normalizeExternalUrl(link?.url);
+    const safeUrl = toSafeWebsiteUrl(link?.url);
     if (!safeUrl) return;
 
     const type = inferSocialType(link);
+    if (!DISPLAYABLE_SOCIAL_TYPES.has(type)) return;
+
     const uniqueKey = `${type}:${safeUrl}`;
     if (seen.has(uniqueKey)) return;
 

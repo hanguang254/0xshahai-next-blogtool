@@ -9,6 +9,7 @@ type DexBoostItem = {
 };
 
 type PairInfo = Record<string, unknown>;
+type LinkItem = { url: string; type?: string; label?: string };
 
 const DEX_BASE = "https://api.dexscreener.com";
 const TOKEN_PROFILES_URL = `${DEX_BASE}/token-profiles/latest/v1`;
@@ -231,17 +232,107 @@ function normalizeTimestamp(value: number) {
   return value < 1_000_000_000_000 ? value * 1000 : value;
 }
 
+function isIpHost(host: string) {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    return host.split(".").every((part) => {
+      const num = Number(part);
+      return Number.isInteger(num) && num >= 0 && num <= 255;
+    });
+  }
+  return /^\[[0-9a-f:]+\]$/i.test(host);
+}
+
+function normalizeLinkUrl(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  let candidate = trimmed;
+  if (candidate.startsWith("//")) {
+    candidate = `https:${candidate}`;
+  } else if (!/^https?:\/\//i.test(candidate)) {
+    if (/^[a-z]+:/i.test(candidate) || candidate.startsWith("/")) return undefined;
+    candidate = `https://${candidate}`;
+  }
+
+  if (/\s/.test(candidate)) return undefined;
+
+  try {
+    const parsed = new URL(candidate);
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol !== "http:" && protocol !== "https:") return undefined;
+
+    const host = parsed.hostname.toLowerCase();
+    if (!host) return undefined;
+
+    const hasDot = host.includes(".");
+    if (!hasDot && host !== "localhost" && !isIpHost(host)) return undefined;
+
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeLinks(input: unknown): LinkItem[] | undefined {
+  if (!Array.isArray(input)) return undefined;
+
+  const links: LinkItem[] = [];
+  const seen = new Set<string>();
+
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const normalizedUrl = normalizeLinkUrl(record.url);
+    if (!normalizedUrl) continue;
+
+    const type =
+      typeof record.type === "string" && record.type.trim() !== ""
+        ? record.type.trim()
+        : undefined;
+    const label =
+      typeof record.label === "string" && record.label.trim() !== ""
+        ? record.label.trim()
+        : undefined;
+
+    const dedupeKey = `${normalizedUrl}|${type ?? ""}|${label ?? ""}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    links.push({ url: normalizedUrl, type, label });
+  }
+
+  return links.length > 0 ? links : undefined;
+}
+
+function mergeLinks(primary?: LinkItem[], secondary?: unknown) {
+  const first = sanitizeLinks(primary);
+  const second = sanitizeLinks(secondary);
+  const merged = [...(first ?? []), ...(second ?? [])];
+  if (merged.length === 0) return undefined;
+
+  const seen = new Set<string>();
+  const result: LinkItem[] = [];
+  for (const item of merged) {
+    const key = `${item.url}|${item.type ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result.length > 0 ? result : undefined;
+}
+
 function extractAveLinks(appendix: unknown) {
   if (typeof appendix !== "string" || appendix.trim() === "") return undefined;
   try {
     const parsed = JSON.parse(appendix) as Record<string, unknown>;
-    const links: Array<{ url: string; type?: string; label?: string }> = [];
+    const links: LinkItem[] = [];
     for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === "string" && value.trim() !== "") {
-        links.push({ url: value, type: key, label: key });
-      }
+      const normalizedUrl = normalizeLinkUrl(value);
+      if (!normalizedUrl) continue;
+      links.push({ url: normalizedUrl, type: key, label: key });
     }
-    return links.length > 0 ? links : undefined;
+    return sanitizeLinks(links);
   } catch {
     return undefined;
   }
@@ -543,6 +634,10 @@ export default async function handler(
         token.sources.length === 1 &&
         token.sources[0] === "ave_trending";
       const aveLinks = isAveOnly ? extractAveLinks(token.appendix) : undefined;
+      const mergedLinks = mergeLinks(
+        aveLinks,
+        Array.isArray(token.links) ? token.links : undefined
+      );
 
       const url =
         typeof token.url === "string"
@@ -619,8 +714,7 @@ export default async function handler(
         headerImageUrl: formatHeaderUrl(token.header),
         iconUrl: finalIcon,
         claimDate,
-        links:
-          aveLinks ?? (Array.isArray(token.links) ? token.links : undefined),
+        links: mergedLinks,
         source: typeof token.source === "string" ? token.source : undefined,
         sources: Array.isArray(token.sources) ? token.sources : undefined,
         error,
