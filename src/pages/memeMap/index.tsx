@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import styles from './index.module.css';
 import AnimatedShaderBackground from '@/components/AnimatedShaderBackground';
@@ -232,7 +232,7 @@ export default function MemeMap() {
   }, []);
 
   // 获取数据的函数
-  const fetchData = (chainId: string, showLoading: boolean = false) => {
+  const fetchData = useCallback((chainId: string, showLoading: boolean = false) => {
     if (showLoading) {
       setLoading(true);
     }
@@ -248,7 +248,7 @@ export default function MemeMap() {
           setLoading(false);
         }
         setLastUpdate(new Date());
-        
+
         // 调试信息：统计图片情况
         const withIcon = items.filter((t: TokenData) => t.iconUrl && t.iconUrl.trim() !== '').length;
         const withoutIcon = items.length - withIcon;
@@ -260,7 +260,7 @@ export default function MemeMap() {
           setLoading(false);
         }
       });
-  };
+  }, []);
 
   useEffect(() => {
     // 首次加载数据（显示加载状态）
@@ -269,14 +269,14 @@ export default function MemeMap() {
     // 设置定时器，定时刷新（不显示加载状态，无感更新）
     const interval = setInterval(() => {
       fetchData(selectedChain, false);
-    }, 30000); // 10000ms = 10秒
+    }, 30000); // 30000ms = 30秒
 
     // 清理定时器
     return () => {
       clearInterval(interval);
       cancelHideTooltip(); // 清理隐藏延时器
     };
-  }, [selectedChain]);
+  }, [selectedChain, fetchData]);
 
   useEffect(() => {
     if (!tokens.length || !svgRef.current) return;
@@ -286,6 +286,16 @@ export default function MemeMap() {
 
     const width = svgRef.current.clientWidth;
     const height = svgRef.current.clientHeight;
+
+    // 预先计算 scale，避免在 map 循环内重复计算
+    const minRadius = 30;
+    const maxRadius = 120;
+    const marketCaps = tokens.map(t => t.marketCap || 0).filter(m => m > 0);
+    const minMarketCap = Math.min(...marketCaps);
+    const maxMarketCap = Math.max(...marketCaps);
+    const scale = d3.scaleSqrt()
+      .domain([minMarketCap, maxMarketCap])
+      .range([minRadius, maxRadius]);
 
     // 转换数据为气泡节点
     const nodes: BubbleNode[] = tokens
@@ -324,17 +334,6 @@ export default function MemeMap() {
         return true;
       })
       .map(token => {
-        // 使用对数scale来计算半径，避免差距过大
-        const minRadius = 30;
-        const maxRadius = 120;
-        const marketCaps = tokens.map(t => t.marketCap || 0).filter(m => m > 0);
-        const minMarketCap = Math.min(...marketCaps);
-        const maxMarketCap = Math.max(...marketCaps);
-        
-        const scale = d3.scaleSqrt()
-          .domain([minMarketCap, maxMarketCap])
-          .range([minRadius, maxRadius]);
-
         const radius = scale(token.marketCap!);
         // 使用圆形分布，让初始位置更分散
         const angle = Math.random() * Math.PI * 2;
@@ -369,7 +368,7 @@ export default function MemeMap() {
           tokenAddress: token.tokenAddress,
           chainId: token.chainId,
           priceChange: token.priceChange,
-          radius: radius,
+          radius,
           x: width / 2 + Math.cos(angle) * distance,
           y: height / 2 + Math.sin(angle) * distance,
         };
@@ -490,7 +489,6 @@ export default function MemeMap() {
           // 添加图片
           bubble.append('image')
             .attr('href', d.iconUrl)
-            .attr('xlink:href', d.iconUrl)
             .attr('crossorigin', 'anonymous')
             .attr('referrerpolicy', 'no-referrer')
             .attr('x', -d.radius)
@@ -735,7 +733,7 @@ export default function MemeMap() {
         </div>
         
         <div className={styles.updateInfo}>
-          <span>🔄 自动刷新：每分钟</span>
+          <span>🔄 自动刷新：每30秒</span>
           <span>最后更新：{formatUpdateTime(lastUpdate)}</span>
         </div>
       </div>
@@ -750,11 +748,11 @@ export default function MemeMap() {
       </div>
 
       {hoveredToken && (
-        <div 
+        <div
           className={styles.tooltip}
           style={{
-            left: tooltipPos.x + 10,
-            top: tooltipPos.y + 10,
+            left: Math.min(tooltipPos.x + 10, window.innerWidth - 290),
+            top: Math.min(tooltipPos.y + 10, window.innerHeight - 440),
           }}
           onMouseEnter={() => {
             isTooltipHoveredRef.current = true;
