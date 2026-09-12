@@ -59,10 +59,24 @@ const monad_test = {
   }
 } as const satisfies Chain;
 
+const robinhood = {
+  id: 4663,
+  name: 'Robinhood Chain',
+  iconUrl: 'https://robinhood.com/favicon.ico',
+  iconBackground: '#00C805',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://rpc.mainnet.chain.robinhood.com'] },
+  },
+  blockExplorers: {
+    default: { name: 'Robinhood Explorer', url: 'https://robinhoodchain.blockscout.com' },
+  }
+} as const satisfies Chain;
+
 
 const config = createConfig({
   connectors,
-  chains: [sepolia, monad_test,bsc,mainnet,base],
+  chains: [sepolia, monad_test, bsc, robinhood, mainnet, base],
   transports: {
     [sepolia.id]: http(),
     [monad_test.id]: http(),
@@ -74,6 +88,7 @@ const config = createConfig({
     // [bsc.id]: http('https://bsc-dataseed4.binance.org'),
     // 付费节点示例（需要 API key）：
     // [bsc.id]: http('https://bsc-mainnet.g.alchemy.com/v2/YOUR_API_KEY'),
+    [robinhood.id]: http('https://rpc.mainnet.chain.robinhood.com'),
     [mainnet.id]: http(),
     [base.id]: http()
   }

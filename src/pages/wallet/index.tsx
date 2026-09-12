@@ -105,6 +105,10 @@ export default function Wallet() {
     abi: wallet_abi,
     functionName: 'owner',
     chainId: currentChain.id,
+    query: {
+      enabled: true,
+      refetchOnMount: true,
+    }
   })
   const OWNER_ADDRESS = ownerAddress;
   // const MAX_UINT256 = (1n << 256n) - 1n;
