@@ -223,11 +223,18 @@ export default async function handler(
       });
     }
 
-    // 第二步：为每个代币获取市值和涨跌幅数据
-    const tokens: TokenBalance[] = [];
+    // 第二步：并发获取所有代币的市场数据
+    const marketDataPromises = tokensData.map((token, i) => {
+      const contractAddress = token.contract_address || '';
+      // 添加交错延迟避免瞬间大量请求
+      const delay = i * 50; // 50ms 交错，比之前的 200ms 快 4 倍
+      return fetchTokenMarketData(contractAddress, dexscreenerChainId, delay);
+    });
 
-    for (let i = 0; i < tokensData.length; i++) {
-      const token = tokensData[i];
+    const marketDataResults = await Promise.all(marketDataPromises);
+
+    // 第三步：组装结果
+    const tokens: TokenBalance[] = tokensData.map((token, i) => {
       const contractAddress = token.contract_address || '';
       const balance = token.balance || '0x0';
       const decimals = token.decimals || 18;
@@ -255,29 +262,28 @@ export default async function handler(
           amount = num.toLocaleString(undefined, { maximumFractionDigits: maxFraction });
         }
       }
-      
-      // 获取价格、市值和涨跌幅数据（带延迟以控制 API 频率）
-      const delay = i * REQUEST_INTERVAL;
-      const { priceUsd, marketCap, priceChange24h } = await fetchTokenMarketData(contractAddress, dexscreenerChainId, delay);
-      
+
+      // 使用并发获取的市场数据
+      const { priceUsd, marketCap, priceChange24h } = marketDataResults[i];
+
       // 计算余额价值（代币数量 × 单价）
       const amountNum = parseFloat((amount || '0').replace(/,/g, ''));
       const balanceValueUsd = priceUsd && amountNum > 0 ? amountNum * priceUsd : 0;
       const balanceValueFormatted = balanceValueUsd > 0
         ? formatMarketCap(balanceValueUsd)
         : '$0.00';
-      
+
       // 格式化市值
       const marketCapFormatted = marketCap && marketCap > 0
         ? formatMarketCap(marketCap)
         : 'N/A';
-      
+
       // 格式化涨跌幅
       const priceChange24hFormatted = priceChange24h != null
         ? `${priceChange24h >= 0 ? '+' : ''}${priceChange24h.toFixed(2)}%`
         : 'N/A';
 
-      tokens.push({
+      return {
         contractAddress,
         symbol,
         decimals,
@@ -286,8 +292,8 @@ export default async function handler(
         balanceValue: balanceValueFormatted,
         marketCap: marketCapFormatted,
         priceChange24h: priceChange24hFormatted,
-      });
-    }
+      };
+    });
 
     return res.status(200).json({
       address,
