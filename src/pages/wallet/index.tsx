@@ -132,6 +132,7 @@ export default function Wallet() {
   const [isLoadingTokens, setIsLoadingTokens] = useState<boolean>(false);
   const [tokensError, setTokensError] = useState<string | null>(null);
   const isFirstLoadRef = useRef<boolean>(true); // 使用 ref 标记是否首次加载，避免闭包问题
+  const balanceRequestIdRef = useRef<number>(0); // 余额请求序号，用于丢弃过期响应
 
   // 通用数量格式化（处理小数、科学计数法等）
   const formatAmount = (raw: any) => {
@@ -183,8 +184,14 @@ export default function Wallet() {
   // 提取 fetchBalances 为独立函数，便于手动刷新
   const fetchBalances = useCallback(async () => {
     if (!CONTRACT_ADDRESS) return;
+
+    // 记录本次请求的序号，只有最新一次请求的结果才会被写入 state，
+    // 避免快速切换网络时慢响应覆盖掉新网络的数据
+    const requestId = ++balanceRequestIdRef.current;
+    const isStale = () => requestId !== balanceRequestIdRef.current;
+
     try {
-      // 只在首次加载时显示加载状态
+      // 只在首次加载（含切换网络后的首次加载）时显示加载状态
       if (isFirstLoadRef.current) {
         setIsLoadingTokens(true);
       }
@@ -198,12 +205,14 @@ export default function Wallet() {
       }
 
       const data = await response.json();
+
+      // 已经切换到别的网络，丢弃这次结果
+      if (isStale()) return;
+
       const tokensData = data.tokens || [];
 
       if (!Array.isArray(tokensData) || tokensData.length === 0) {
         setTokens([]);
-        setIsLoadingTokens(false);
-        isFirstLoadRef.current = false;
         return;
       }
 
@@ -222,6 +231,7 @@ export default function Wallet() {
       setTokens(mapped);
     } catch (err) {
       if ((err as any)?.name === 'AbortError') return;
+      if (isStale()) return;
       console.error('获取余额数据失败:', err);
 
       // 针对不同网络显示不同的错误提示
@@ -232,8 +242,10 @@ export default function Wallet() {
       }
       setTokens([]);
     } finally {
-      setIsLoadingTokens(false);
-      isFirstLoadRef.current = false;
+      if (!isStale()) {
+        setIsLoadingTokens(false);
+        isFirstLoadRef.current = false;
+      }
     }
   }, [CONTRACT_ADDRESS, selectedNetwork]);
 
@@ -254,6 +266,17 @@ export default function Wallet() {
   // 存储每个代币的锁定状态（true=已锁定，false=未锁定）
   const [tokenLockStatus, setTokenLockStatus] = useState<Record<string, boolean>>({});
 
+  // 切换网络时立即清空上一个网络的数据，避免短暂展示错误网络的代币列表
+  // 注意：不要在这里改动 balanceRequestIdRef，fetchBalances 自身的自增已能让旧请求作废，
+  // 这里再自增会把本轮刚发出的请求也误判为过期
+  useEffect(() => {
+    isFirstLoadRef.current = true; // 重新显示加载状态
+    setTokens([]);
+    setTokenLockStatus({});
+    setTokensError(null);
+    setIsLoadingTokens(true);
+  }, [selectedNetwork]);
+
   // 使用自定义的高速 RPC 节点
   const BSC_RPC_URL = 'https://bnb-mainnet.g.alchemy.com/v2/cx_UaSly_yEW7f3t3jAEy';
   const ROBINHOOD_RPC_URL = 'https://rpc.mainnet.chain.robinhood.com';
@@ -264,6 +287,9 @@ export default function Wallet() {
   // 查询每个代币的锁定状态
   useEffect(() => {
     if (!address || tokens.length === 0) return;
+
+    // 本次查询是否已被后续的网络/代币变更取代
+    let cancelled = false;
 
     const fetchLockStatus = async () => {
       const statusMap: Record<string, boolean> = {};
@@ -359,11 +385,15 @@ export default function Wallet() {
           }
         }));
 
+        if (cancelled) return;
+
         // 批次之间稍微延迟，避免过快
         if (batchIndex < batches.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 50));
         }
       }
+
+      if (cancelled) return;
 
       console.log('\n✅ 查询完成，状态汇总:');
       console.log(statusMap);
@@ -371,6 +401,10 @@ export default function Wallet() {
     };
 
     fetchLockStatus();
+
+    return () => {
+      cancelled = true;
+    };
   }, [tokens, address, currentRpcUrl, selectedNetwork]);
 
   // 更新代币列表，根据锁定状态设置 canTransfer
@@ -980,6 +1014,7 @@ useEffect(() => {
             size="sm"
             color={selectedNetwork === 'bsc' ? 'primary' : 'default'}
             variant={selectedNetwork === 'bsc' ? 'solid' : 'bordered'}
+            isLoading={selectedNetwork === 'bsc' && isLoadingTokens}
             onPress={() => setSelectedNetwork('bsc')}
           >
             BSC 网络
@@ -988,6 +1023,7 @@ useEffect(() => {
             size="sm"
             color={selectedNetwork === 'robinhood' ? 'primary' : 'default'}
             variant={selectedNetwork === 'robinhood' ? 'solid' : 'bordered'}
+            isLoading={selectedNetwork === 'robinhood' && isLoadingTokens}
             onPress={() => setSelectedNetwork('robinhood')}
           >
             Robinhood 网络
