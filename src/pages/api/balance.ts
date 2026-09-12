@@ -13,8 +13,18 @@ type TokenBalance = {
 
 const CHAINBASE_API_KEY = '38HqF3yzT2k3GPnGF5tBCoDmnRQ';
 const CHAINBASE_ENDPOINT = 'https://api.chainbase.online/v1';
-const CHAIN_ID = '56'; // BSC
+const BLOCKSCOUT_ENDPOINT = 'https://robinhoodchain.blockscout.com/api/v2';
 const REQUEST_INTERVAL = 200; // 200ms 间隔
+
+// 链配置映射
+const CHAIN_CONFIG: Record<string, {
+  chainId: string;
+  dexscreenerChainId: string;
+  useBlockscout?: boolean;
+}> = {
+  'bsc': { chainId: '56', dexscreenerChainId: 'bsc', useBlockscout: false },
+  'robinhood': { chainId: '4663', dexscreenerChainId: 'robinhood', useBlockscout: true }
+};
 
 // 格式化十六进制余额为十进制字符串
 function formatHexBalance(hexBalance: string, decimals: number): string {
@@ -70,12 +80,13 @@ function formatMarketCap(value: number): string {
 // 获取代币市值、价格和涨跌幅
 async function fetchTokenMarketData(
   contractAddress: string,
+  dexscreenerChainId: string,
   delay: number = 0
 ): Promise<{ priceUsd: number | null; marketCap: number | null; priceChange24h: number | null }> {
   if (delay > 0) {
     await new Promise(resolve => setTimeout(resolve, delay));
   }
-  
+
   try {
     const response = await fetch(
       `https://api.dexscreener.com/latest/dex/tokens/${contractAddress}`,
@@ -86,27 +97,63 @@ async function fetchTokenMarketData(
         }
       }
     );
-    
+
     if (!response.ok) {
       return { priceUsd: null, marketCap: null, priceChange24h: null };
     }
-    
+
     const json = await response.json();
     const pairs = json.pairs || [];
-    const bscPair = pairs.find((pair: any) => pair.chainId === 'bsc') || pairs[0];
-    
-    if (!bscPair) {
+    const chainPair = pairs.find((pair: any) => pair.chainId === dexscreenerChainId) || pairs[0];
+
+    if (!chainPair) {
       return { priceUsd: null, marketCap: null, priceChange24h: null };
     }
-    
-    const priceUsd = bscPair.priceUsd ? parseFloat(bscPair.priceUsd) : null;
-    const marketCap = bscPair.marketCap || bscPair.fdv || null;
-    const priceChange24h = bscPair.priceChange?.h24 || null;
-    
+
+    const priceUsd = chainPair.priceUsd ? parseFloat(chainPair.priceUsd) : null;
+    const marketCap = chainPair.marketCap || chainPair.fdv || null;
+    const priceChange24h = chainPair.priceChange?.h24 || null;
+
     return { priceUsd, marketCap, priceChange24h };
   } catch (err) {
     console.error(`获取市场数据错误 ${contractAddress}:`, err);
     return { priceUsd: null, marketCap: null, priceChange24h: null };
+  }
+}
+
+// 从 Blockscout 获取代币列表
+async function fetchTokensFromBlockscout(address: string): Promise<any[]> {
+  try {
+    const response = await fetch(
+      `${BLOCKSCOUT_ENDPOINT}/addresses/${address}/tokens?type=ERC-20`,
+      {
+        method: 'GET',
+        headers: {
+          'accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      console.error(`Blockscout API 返回错误: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const json = await response.json();
+    const items = json.items || [];
+
+    // 转换为统一格式
+    return items.map((item: any) => ({
+      contract_address: item.token?.address_hash || item.token?.address || '',
+      symbol: item.token?.symbol || 'N/A',
+      name: item.token?.name || 'N/A',
+      decimals: parseInt(item.token?.decimals || '18'),
+      balance: item.value || '0',
+    }));
+  } catch (err) {
+    console.error('Blockscout API 请求失败:', err);
+    return [];
   }
 }
 
@@ -119,7 +166,7 @@ export default async function handler(
     return res.status(405).json({ error: 'method_not_allowed' });
   }
 
-  const { address } = req.query;
+  const { address, network = 'bsc' } = req.query;
 
   if (!address || typeof address !== 'string') {
     return res.status(400).json({ error: 'address_required' });
@@ -130,31 +177,47 @@ export default async function handler(
     return res.status(400).json({ error: 'invalid_address' });
   }
 
+  const chainConfig = CHAIN_CONFIG[network as string];
+  if (!chainConfig) {
+    return res.status(400).json({ error: 'invalid_network' });
+  }
+
+  const { chainId, dexscreenerChainId, useBlockscout } = chainConfig;
+
   res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=60');
 
   try {
-    // 第一步：获取代币列表
-    const tokensResponse = await fetch(
-      `${CHAINBASE_ENDPOINT}/account/tokens?chain_id=${CHAIN_ID}&address=${address}&limit=100&page=1`,
-      {
-        method: 'GET',
-        headers: {
-          'x-api-key': CHAINBASE_API_KEY,
-          'accept': 'application/json'
+    let tokensData: any[] = [];
+
+    // 根据网络选择不同的数据源
+    if (useBlockscout) {
+      // 使用 Blockscout API（用于 Robinhood 网络）
+      tokensData = await fetchTokensFromBlockscout(address);
+    } else {
+      // 使用 Chainbase API（用于 BSC 等网络）
+      const tokensResponse = await fetch(
+        `${CHAINBASE_ENDPOINT}/account/tokens?chain_id=${chainId}&address=${address}&limit=100&page=1`,
+        {
+          method: 'GET',
+          headers: {
+            'x-api-key': CHAINBASE_API_KEY,
+            'accept': 'application/json'
+          }
         }
+      );
+
+      if (!tokensResponse.ok) {
+        throw new Error(`Chainbase API 返回错误: ${tokensResponse.statusText}`);
       }
-    );
 
-    if (!tokensResponse.ok) {
-      throw new Error(`Chainbase API 返回错误: ${tokensResponse.statusText}`);
+      const tokensJson = await tokensResponse.json();
+      tokensData = tokensJson.data || [];
     }
-
-    const tokensJson = await tokensResponse.json();
-    const tokensData = tokensJson.data || [];
 
     if (!Array.isArray(tokensData) || tokensData.length === 0) {
       return res.status(200).json({
         address,
+        network,
         count: 0,
         tokens: []
       });
@@ -162,20 +225,40 @@ export default async function handler(
 
     // 第二步：为每个代币获取市值和涨跌幅数据
     const tokens: TokenBalance[] = [];
-    
+
     for (let i = 0; i < tokensData.length; i++) {
       const token = tokensData[i];
       const contractAddress = token.contract_address || '';
       const balance = token.balance || '0x0';
       const decimals = token.decimals || 18;
       const symbol = token.symbol || token.name || 'N/A';
-      
-      // 格式化余额
-      const amount = formatHexBalance(balance, decimals);
+
+      // 格式化余额（如果已经是十进制字符串则直接使用）
+      let amount: string;
+      if (balance.startsWith('0x')) {
+        amount = formatHexBalance(balance, decimals);
+      } else {
+        // Blockscout 返回的是十进制字符串
+        const balanceBigInt = BigInt(balance);
+        const divisor = BigInt(10 ** decimals);
+        const wholePart = balanceBigInt / divisor;
+        const fractionalPart = balanceBigInt % divisor;
+
+        if (fractionalPart === BigInt(0)) {
+          amount = wholePart.toString();
+        } else {
+          const fractionalStr = fractionalPart.toString().padStart(decimals, '0');
+          const trimmedFractional = fractionalStr.replace(/0+$/, '');
+          const num = Number(wholePart) + Number('0.' + trimmedFractional);
+          const abs = Math.abs(num);
+          const maxFraction = abs > 1 ? 4 : 8;
+          amount = num.toLocaleString(undefined, { maximumFractionDigits: maxFraction });
+        }
+      }
       
       // 获取价格、市值和涨跌幅数据（带延迟以控制 API 频率）
       const delay = i * REQUEST_INTERVAL;
-      const { priceUsd, marketCap, priceChange24h } = await fetchTokenMarketData(contractAddress, delay);
+      const { priceUsd, marketCap, priceChange24h } = await fetchTokenMarketData(contractAddress, dexscreenerChainId, delay);
       
       // 计算余额价值（代币数量 × 单价）
       const amountNum = parseFloat((amount || '0').replace(/,/g, ''));
@@ -208,6 +291,7 @@ export default async function handler(
 
     return res.status(200).json({
       address,
+      network,
       count: tokens.length,
       tokens
     });

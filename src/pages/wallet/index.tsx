@@ -4,9 +4,22 @@ import { Card, CardHeader, CardBody, Table, TableHeader, TableColumn, TableBody,
 import { Input } from "@heroui/input";
 import { useAccount, useChainId, useSwitchChain } from 'wagmi';
 import { useWriteContract, useWaitForTransactionReceipt,useReadContract} from 'wagmi'
-import { bsc } from 'wagmi/chains';
+import { bsc, Chain } from 'wagmi/chains';
 import {wallet_abi} from '../../ABI/transferwallet';
 import {ERC_abi} from '../../ABI/IERC20';
+
+// 定义 Robinhood Chain
+const robinhood = {
+  id: 4663,
+  name: 'Robinhood Chain',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://rpc.mainnet.chain.robinhood.com'] },
+  },
+  blockExplorers: {
+    default: { name: 'Robinhood Explorer', url: 'https://robinhoodchain.blockscout.com' },
+  }
+} as const satisfies Chain;
 
 import { parseUnits, formatUnits, encodeFunctionData } from 'viem'
 
@@ -72,18 +85,26 @@ export default function Wallet() {
   // Alert 状态
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertVariant, setAlertVariant] = useState<'primary' | 'success' | 'danger' | 'warning'>('primary');
-  
+
   // 锁仓天数
   const [lockDays, setLockDays] = useState<string>('7');
 
-  // 静态显示的合约钱包地址
+  // 当前选择的网络 (bsc 或 robinhood)
+  const [selectedNetwork, setSelectedNetwork] = useState<'bsc' | 'robinhood'>('bsc');
+
+  // 静态显示的合约钱包地址（两条链使用相同地址）
   const CONTRACT_ADDRESS = '0x344f1c033Ee37860eEe2CA2873320e08c3fc21c9';
+
+  // 根据选择的网络获取对应的链配置
+  const currentChain = selectedNetwork === 'bsc' ? bsc : robinhood;
+
   const {
     data: ownerAddress, isPending: isOwnerPending, error: ownerError
   } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: wallet_abi,
     functionName: 'owner',
+    chainId: currentChain.id,
   })
   const OWNER_ADDRESS = ownerAddress;
   // const MAX_UINT256 = (1n << 256n) - 1n;
@@ -155,7 +176,7 @@ export default function Wallet() {
       setTokensError(null);
 
       // 调用统一的 balance 接口
-      const response = await fetch(`/api/balance?address=${CONTRACT_ADDRESS}`);
+      const response = await fetch(`/api/balance?address=${CONTRACT_ADDRESS}&network=${selectedNetwork}`);
 
       if (!response.ok) {
         throw new Error(`Balance API 返回错误: ${response.statusText}`);
@@ -187,13 +208,19 @@ export default function Wallet() {
     } catch (err) {
       if ((err as any)?.name === 'AbortError') return;
       console.error('获取余额数据失败:', err);
-      setTokensError('无法获取代币数据');
+
+      // 针对不同网络显示不同的错误提示
+      if (selectedNetwork === 'robinhood') {
+        setTokensError('暂时无法获取 Robinhood 网络代币数据，请稍后重试');
+      } else {
+        setTokensError('无法获取代币数据');
+      }
       setTokens([]);
     } finally {
       setIsLoadingTokens(false);
       isFirstLoadRef.current = false;
     }
-  }, [CONTRACT_ADDRESS]);
+  }, [CONTRACT_ADDRESS, selectedNetwork]);
 
   // 从统一的 /api/balance 接口获取代币余额和价格数据
   useEffect(() => {
@@ -214,6 +241,10 @@ export default function Wallet() {
 
   // 使用自定义的高速 RPC 节点
   const BSC_RPC_URL = 'https://bnb-mainnet.g.alchemy.com/v2/cx_UaSly_yEW7f3t3jAEy';
+  const ROBINHOOD_RPC_URL = 'https://rpc.mainnet.chain.robinhood.com';
+
+  // 根据选择的网络获取对应的 RPC URL
+  const currentRpcUrl = selectedNetwork === 'bsc' ? BSC_RPC_URL : ROBINHOOD_RPC_URL;
 
   // 查询每个代币的锁定状态
   useEffect(() => {
@@ -255,7 +286,7 @@ export default function Wallet() {
             // console.log('   代币地址:', token.contractAddress);
             
             // 使用自定义的高速 RPC
-            const response = await fetch(BSC_RPC_URL, {
+            const response = await fetch(currentRpcUrl, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -325,7 +356,7 @@ export default function Wallet() {
     };
 
     fetchLockStatus();
-  }, [tokens, address]);
+  }, [tokens, address, currentRpcUrl, selectedNetwork]);
 
   // 更新代币列表，根据锁定状态设置 canTransfer
   // tokenLockStatus: true=已锁定，false=未锁定
@@ -527,15 +558,15 @@ const amountBigInt = () => {
     }
 
     // 检查网络
-    if (chainId !== bsc.id) {
+    if (chainId !== currentChain.id) {
       try {
-        switchChain({ chainId: bsc.id });
+        switchChain({ chainId: currentChain.id });
         setAlertVariant('primary');
-        setAlertMsg('正在切换到 BSC 网络，请确认...');
+        setAlertMsg(`正在切换到 ${currentChain.name} 网络，请确认...`);
       } catch (err) {
         console.error('切换网络失败:', err);
         setAlertVariant('danger');
-        setAlertMsg('切换网络失败，请手动切换到 BSC 网络');
+        setAlertMsg(`切换网络失败，请手动切换到 ${currentChain.name} 网络`);
       }
       return;
     }
@@ -575,15 +606,15 @@ const handleApprove = async () => {
   }
 
   // 检查网络
-  if (chainId !== bsc.id) {
+  if (chainId !== currentChain.id) {
     try {
-      switchChain({ chainId: bsc.id });
+      switchChain({ chainId: currentChain.id });
       setAlertVariant('primary');
-      setAlertMsg('正在切换到 BSC 网络，请确认...');
+      setAlertMsg(`正在切换到 ${currentChain.name} 网络，请确认...`);
     } catch (err) {
       console.error('切换网络失败:', err);
       setAlertVariant('danger');
-      setAlertMsg('切换网络失败，请手动切换到 BSC 网络');
+      setAlertMsg(`切换网络失败，请手动切换到 ${currentChain.name} 网络`);
     }
     return;
   }
@@ -803,7 +834,7 @@ useEffect(() => {
       setAlertMsg('请选择要提取的代币');
       return;
     }
-    
+
     // 检查是否可以提取
     if (!canWithdrawSelectedToken) {
       setAlertVariant('danger');
@@ -812,15 +843,15 @@ useEffect(() => {
     }
 
     // 检查网络
-    if (chainId !== bsc.id) {
+    if (chainId !== currentChain.id) {
       try {
-        switchChain({ chainId: bsc.id });
+        switchChain({ chainId: currentChain.id });
         setAlertVariant('primary');
-        setAlertMsg('正在切换到 BSC 网络，请确认...');
+        setAlertMsg(`正在切换到 ${currentChain.name} 网络，请确认...`);
       } catch (err) {
         console.error('切换网络失败:', err);
         setAlertVariant('danger');
-        setAlertMsg('切换网络失败，请手动切换到 BSC 网络');
+        setAlertMsg(`切换网络失败，请手动切换到 ${currentChain.name} 网络`);
       }
       return;
     }
@@ -924,6 +955,24 @@ useEffect(() => {
       )}
       <div className={styles.header}>
         <h1 className={styles.title}>合约钱包</h1>
+        <div className={styles.networkSelector}>
+          <Button
+            size="sm"
+            color={selectedNetwork === 'bsc' ? 'primary' : 'default'}
+            variant={selectedNetwork === 'bsc' ? 'solid' : 'bordered'}
+            onPress={() => setSelectedNetwork('bsc')}
+          >
+            BSC 网络
+          </Button>
+          <Button
+            size="sm"
+            color={selectedNetwork === 'robinhood' ? 'primary' : 'default'}
+            variant={selectedNetwork === 'robinhood' ? 'solid' : 'bordered'}
+            onPress={() => setSelectedNetwork('robinhood')}
+          >
+            Robinhood 网络
+          </Button>
+        </div>
       </div>
 
       <Card className={styles.walletCard}>
@@ -1090,15 +1139,27 @@ useEffect(() => {
                                   </Chip>
                                 </TableCell>
                                 <TableCell>{token.amount || '0.00'}</TableCell>
-                                <TableCell className={styles.priceCell}>{token.balanceValue || '$0.00'}</TableCell>
-                                <TableCell className={styles.priceCell}>{token.marketCap || 'N/A'}</TableCell>
+                                <TableCell className={styles.priceCell}>
+                                  {token.balanceValue === '$0.00' || token.balanceValue === 'N/A'
+                                    ? <span style={{ color: '#888' }}>--</span>
+                                    : token.balanceValue}
+                                </TableCell>
+                                <TableCell className={styles.priceCell}>
+                                  {token.marketCap === 'N/A'
+                                    ? <span style={{ color: '#888' }}>--</span>
+                                    : token.marketCap}
+                                </TableCell>
                                 <TableCell>
-                                  <span style={{ 
-                                    color: isPositive ? '#17c964' : isNegative ? '#f31260' : 'inherit',
-                                    fontWeight: '500'
-                                  }}>
-                                    {token.priceChange24h || 'N/A'}
-                                  </span>
+                                  {token.priceChange24h === 'N/A' ? (
+                                    <span style={{ color: '#888' }}>--</span>
+                                  ) : (
+                                    <span style={{
+                                      color: isPositive ? '#17c964' : isNegative ? '#f31260' : 'inherit',
+                                      fontWeight: '500'
+                                    }}>
+                                      {token.priceChange24h}
+                                    </span>
+                                  )}
                                 </TableCell>
                                 <TableCell>
                                   <Chip 
