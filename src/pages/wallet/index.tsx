@@ -86,8 +86,19 @@ export default function Wallet() {
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertVariant, setAlertVariant] = useState<'primary' | 'success' | 'danger' | 'warning'>('primary');
 
-  // 锁仓天数
-  const [lockDays, setLockDays] = useState<string>('7');
+  // 锁仓小时数（合约按秒锁仓，最少 1 小时，最多 3650 天）
+  const [lockHours, setLockHours] = useState<string>('1');
+
+  // 合约常量：MIN_LOCK_DURATION = 1 hours，MAX_LOCK_DURATION = 3650 days
+  const MIN_LOCK_HOURS = 1;
+  const MAX_LOCK_HOURS = 3650 * 24;
+
+  // 校验锁仓小时数是否合法
+  const isValidLockHours = (value: string) => {
+    if (!value) return false;
+    const num = Number(value);
+    return Number.isInteger(num) && num >= MIN_LOCK_HOURS && num <= MAX_LOCK_HOURS;
+  };
 
   // 当前选择的网络 (bsc 或 robinhood)
   const [selectedNetwork, setSelectedNetwork] = useState<'bsc' | 'robinhood'>('bsc');
@@ -538,7 +549,7 @@ const amountBigInt = () => {
     hasShownLockSuccessRef.current = false;
     setAlertMsg(null);
     setLockAmount('');
-    setLockDays('7');
+    setLockHours('1');
     setLockTokenAddress('');
     setLockTokenDecimals('18');
     onLockOpen();
@@ -551,9 +562,9 @@ const amountBigInt = () => {
       setAlertMsg('请输入正确的数量');
       return;
     }
-    if (!lockDays || Number(lockDays) < 1 || !Number.isInteger(Number(lockDays))) {
+    if (!isValidLockHours(lockHours)) {
       setAlertVariant('danger');
-      setAlertMsg('锁定天数不能少于1天，且必须为整数');
+      setAlertMsg(`锁定时长必须为整数小时，范围 ${MIN_LOCK_HOURS} ~ ${MAX_LOCK_HOURS} 小时`);
       return;
     }
     if (!isValidAddress(lockTokenAddress)) {
@@ -578,11 +589,13 @@ const amountBigInt = () => {
 
     try {
       const amount = amountBigInt();
+      // 使用秒级锁仓函数，支持小时级锁定期
+      const lockSeconds = BigInt(Number(lockHours) * 3600);
       await writeLock({
         address: CONTRACT_ADDRESS as `0x${string}`,
         abi: wallet_abi,
-        functionName: 'depositlockToken',
-        args: [lockTokenAddress, amount, BigInt(lockDays)],
+        functionName: 'depositLockTokenBySeconds',
+        args: [lockTokenAddress, amount, lockSeconds],
         account: address,
       } as any);
       setAlertVariant('primary');
@@ -761,7 +774,7 @@ useEffect(() => {
     const [unlockTimestamp, isLocked, remainingTime, lockedAmount] = selectedTokenLockInfo as [bigint, boolean, bigint, bigint];
     
     // 关键检查：必须有锁定记录（lockedAmount > 0）
-    // 合约要求：只能提取通过 depositlockToken 锁仓的代币
+    // 合约要求：只能提取通过锁仓功能存入的代币（与 depositLockTokenBySeconds 共用同一套锁仓记录）
     if (lockedAmount === BigInt(0)) {
       return false; // 没有锁定记录，无法提取
     }
@@ -1257,23 +1270,45 @@ useEffect(() => {
                   />
                   
                   <Input
-                    label="锁定天数"
-                    placeholder="7"
-                    value={lockDays}
+                    label="锁定小时数"
+                    placeholder="1"
+                    value={lockHours}
                     onChange={(e) => {
                       const value = e.target.value;
                       // 只允许输入整数
                       if (value === '' || /^\d+$/.test(value)) {
-                        setLockDays(value);
+                        setLockHours(value);
                       }
                     }}
-                    description="代币将被锁定的天数（最少1天，仅限整数）"
+                    description={`代币将被锁定的小时数（最少 ${MIN_LOCK_HOURS} 小时，最多 ${MAX_LOCK_HOURS} 小时，仅限整数）`}
                     type="number"
-                    min="1"
+                    min={String(MIN_LOCK_HOURS)}
+                    max={String(MAX_LOCK_HOURS)}
                     step="1"
-                    isInvalid={lockDays !== '' && (Number(lockDays) < 1 || !Number.isInteger(Number(lockDays)))}
-                    errorMessage={lockDays !== '' && (Number(lockDays) < 1 || !Number.isInteger(Number(lockDays))) ? '锁定天数不能少于1天，且必须为整数' : ''}
+                    isInvalid={lockHours !== '' && !isValidLockHours(lockHours)}
+                    errorMessage={lockHours !== '' && !isValidLockHours(lockHours) ? `锁定时长必须为整数小时，范围 ${MIN_LOCK_HOURS} ~ ${MAX_LOCK_HOURS} 小时` : ''}
                   />
+
+                  <div className="flex gap-2 flex-wrap">
+                    {[
+                      { label: '1小时', hours: 1 },
+                      { label: '6小时', hours: 6 },
+                      { label: '12小时', hours: 12 },
+                      { label: '1天', hours: 24 },
+                      { label: '7天', hours: 24 * 7 },
+                      { label: '30天', hours: 24 * 30 },
+                    ].map((preset) => (
+                      <Button
+                        key={preset.hours}
+                        size="sm"
+                        variant={Number(lockHours) === preset.hours ? 'solid' : 'bordered'}
+                        color={Number(lockHours) === preset.hours ? 'primary' : 'default'}
+                        onPress={() => setLockHours(String(preset.hours))}
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
+                  </div>
 
                   {isValidAddress(lockTokenAddress) && (
                     <div className="text-sm text-default-600">
@@ -1281,8 +1316,8 @@ useEffect(() => {
                         ? (BigInt(allowance as any) === MAX_UINT256 ? '无限制' : formatUnits(allowance as any, parseInt(lockTokenDecimals) || 18))
                         : '0'}
                       </div>
-                      <div>预计解锁时间: {lockDays && Number(lockDays) >= 1
-                        ? new Date(Date.now() + Number(lockDays) * 24 * 60 * 60 * 1000).toLocaleString('zh-CN', {
+                      <div>预计解锁时间: {isValidLockHours(lockHours)
+                        ? new Date(Date.now() + Number(lockHours) * 60 * 60 * 1000).toLocaleString('zh-CN', {
                             year: 'numeric',
                             month: '2-digit',
                             day: '2-digit',
@@ -1290,7 +1325,7 @@ useEffect(() => {
                             minute: '2-digit',
                             second: '2-digit'
                           })
-                        : '请输入锁定天数'}
+                        : '请输入锁定小时数'}
                       </div>
                     </div>
                   )}
@@ -1311,9 +1346,7 @@ useEffect(() => {
                       !isValidAddress(lockTokenAddress) ||
                       !lockAmount ||
                       Number(lockAmount) <= 0 ||
-                      !lockDays ||
-                      Number(lockDays) < 1 ||
-                      !Number.isInteger(Number(lockDays)) ||
+                      !isValidLockHours(lockHours) ||
                       !lockTokenDecimals ||
                       Number(lockTokenDecimals) < 0 ||
                       Number(lockTokenDecimals) > 18 ||
