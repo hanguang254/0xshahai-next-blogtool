@@ -211,8 +211,12 @@ export default function Wallet() {
 
       const tokensData = data.tokens || [];
 
+      // 如果 API 返回空数据但之前有代币，保留原来的列表（可能是 API 临时故障）
       if (!Array.isArray(tokensData) || tokensData.length === 0) {
-        setTokens([]);
+        // 只在首次加载时才清空列表，后续轮询时保留原数据
+        if (isFirstLoadRef.current) {
+          setTokens([]);
+        }
         return;
       }
 
@@ -240,7 +244,10 @@ export default function Wallet() {
       } else {
         setTokensError('无法获取代币数据');
       }
-      setTokens([]);
+      // 只在首次加载时才清空列表，后续轮询遇到错误时保留原数据
+      if (isFirstLoadRef.current) {
+        setTokens([]);
+      }
     } finally {
       if (!isStale()) {
         setIsLoadingTokens(false);

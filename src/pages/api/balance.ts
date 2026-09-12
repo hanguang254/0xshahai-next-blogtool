@@ -77,7 +77,7 @@ function formatMarketCap(value: number): string {
   }
 }
 
-// 获取代币市值、价格和涨跌幅
+// 获取代币市值、价格和涨跌幅（带超时控制）
 async function fetchTokenMarketData(
   contractAddress: string,
   dexscreenerChainId: string,
@@ -88,15 +88,22 @@ async function fetchTokenMarketData(
   }
 
   try {
+    // 设置 8 秒超时
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     const response = await fetch(
       `https://api.dexscreener.com/latest/dex/tokens/${contractAddress}`,
       {
         method: 'GET',
         headers: {
           'accept': 'application/json'
-        }
+        },
+        signal: controller.signal
       }
     );
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       return { priceUsd: null, marketCap: null, priceChange24h: null };
@@ -116,7 +123,12 @@ async function fetchTokenMarketData(
 
     return { priceUsd, marketCap, priceChange24h };
   } catch (err) {
-    console.error(`获取市场数据错误 ${contractAddress}:`, err);
+    // 超时或其他错误，返回 null 而不是抛出异常
+    if ((err as any).name === 'AbortError') {
+      console.warn(`获取市场数据超时 ${contractAddress}`);
+    } else {
+      console.error(`获取市场数据错误 ${contractAddress}:`, err);
+    }
     return { priceUsd: null, marketCap: null, priceChange24h: null };
   }
 }
@@ -231,7 +243,11 @@ export default async function handler(
       return fetchTokenMarketData(contractAddress, dexscreenerChainId, delay);
     });
 
-    const marketDataResults = await Promise.all(marketDataPromises);
+    // 使用 Promise.allSettled 而不是 Promise.all，这样即使部分请求失败也不会影响其他代币
+    const marketDataSettled = await Promise.allSettled(marketDataPromises);
+    const marketDataResults = marketDataSettled.map(result =>
+      result.status === 'fulfilled' ? result.value : { priceUsd: null, marketCap: null, priceChange24h: null }
+    );
 
     // 第三步：组装结果
     const tokens: TokenBalance[] = tokensData.map((token, i) => {
