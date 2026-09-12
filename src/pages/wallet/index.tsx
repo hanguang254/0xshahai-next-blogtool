@@ -514,6 +514,7 @@ const {data: allowance, refetch: refetchAllowance} = useReadContract({
   abi: ERC_abi,
   functionName: 'allowance',
   args: [address, CONTRACT_ADDRESS],
+  chainId: currentChain.id,
   query: {
     enabled: Boolean(address && isValidAddress(lockTokenAddress)),
     staleTime: 0,
@@ -712,11 +713,13 @@ useEffect(() => {
     abi: wallet_abi,
     functionName: 'getTokenLockInfo',
     args: [address as `0x${string}`, selectedToken?.contractAddress as `0x${string}`],
+    chainId: currentChain.id,
     query: {
       enabled: Boolean(address && selectedToken?.contractAddress),
       staleTime: 0,
       gcTime: 5000,
       refetchOnWindowFocus: false,
+      refetchOnMount: true,
     },
   });
 
