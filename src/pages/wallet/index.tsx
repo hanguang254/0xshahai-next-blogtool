@@ -23,6 +23,12 @@ const robinhood = {
 
 import { parseUnits, formatUnits, encodeFunctionData } from 'viem'
 
+// ERC_abi 中没有 decimals / symbol，这里补一个最小 ABI 用于读取代币元信息
+const erc20MetaAbi = [
+  { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },
+  { type: 'function', name: 'symbol', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+] as const;
+
 // 复制图标 SVG
 const CopyIcon = () => (
   <svg
@@ -576,10 +582,88 @@ const {data: allowance, refetch: refetchAllowance} = useReadContract({
   },
 })
 
+// 查询当前连接钱包在该代币上的余额
+const {
+  data: lockTokenWalletBalance,
+  isFetching: isLockTokenBalanceFetching,
+} = useReadContract({
+  address: (isValidAddress(lockTokenAddress) ? lockTokenAddress : undefined) as `0x${string}` | undefined,
+  abi: ERC_abi,
+  functionName: 'balanceOf',
+  args: [address as `0x${string}`],
+  chainId: currentChain.id,
+  query: {
+    enabled: Boolean(address && isValidAddress(lockTokenAddress)),
+    staleTime: 0,
+    gcTime: 5000,
+    refetchOnWindowFocus: false,
+    retry: 2,
+  },
+})
+
+// 查询代币链上精度，避免用户手填精度错误导致余额/全部按钮数值不准
+const { data: lockTokenOnChainDecimals } = useReadContract({
+  address: (isValidAddress(lockTokenAddress) ? lockTokenAddress : undefined) as `0x${string}` | undefined,
+  abi: erc20MetaAbi,
+  functionName: 'decimals',
+  chainId: currentChain.id,
+  query: {
+    enabled: Boolean(isValidAddress(lockTokenAddress)),
+    retry: 1,
+  },
+})
+
+// 查询代币符号，仅用于余额展示
+const { data: lockTokenSymbol } = useReadContract({
+  address: (isValidAddress(lockTokenAddress) ? lockTokenAddress : undefined) as `0x${string}` | undefined,
+  abi: erc20MetaAbi,
+  functionName: 'symbol',
+  chainId: currentChain.id,
+  query: {
+    enabled: Boolean(isValidAddress(lockTokenAddress)),
+    retry: 1,
+  },
+})
+
+// 链上精度优先，读取失败时回退到用户输入
+const lockTokenEffectiveDecimals = useMemo(() => {
+  if (lockTokenOnChainDecimals != null) return Number(lockTokenOnChainDecimals);
+  const parsed = parseInt(lockTokenDecimals);
+  return Number.isFinite(parsed) ? parsed : 18;
+}, [lockTokenOnChainDecimals, lockTokenDecimals]);
+
+// 读到链上精度后同步到输入框，防止手填值与实际精度不一致
+useEffect(() => {
+  if (lockTokenOnChainDecimals == null) return;
+  const onChainValue = String(Number(lockTokenOnChainDecimals));
+  setLockTokenDecimals((prev) => (prev === onChainValue ? prev : onChainValue));
+}, [lockTokenOnChainDecimals]);
+
+// 全精度余额字符串，用于「全部」按钮回填（不能用带千分位的展示值）
+const lockTokenWalletBalanceExact = useMemo(() => {
+  if (lockTokenWalletBalance == null) return null;
+  try {
+    return formatUnits(lockTokenWalletBalance as bigint, lockTokenEffectiveDecimals);
+  } catch (err) {
+    return null;
+  }
+}, [lockTokenWalletBalance, lockTokenEffectiveDecimals]);
+
+// 展示用余额（带千分位）
+const lockTokenWalletBalanceDisplay = useMemo(() => {
+  if (lockTokenWalletBalanceExact == null) return null;
+  return formatAmount(Number(lockTokenWalletBalanceExact));
+}, [lockTokenWalletBalanceExact]);
+
+// 「全部」：把钱包全部余额回填到转入数量
+const handleFillMaxLockAmount = () => {
+  if (!lockTokenWalletBalanceExact || Number(lockTokenWalletBalanceExact) <= 0) return;
+  setLockAmount(lockTokenWalletBalanceExact);
+};
+
 const amountBigInt = () => {
   if (!lockAmount) return parseUnits('0', 18);
-  const decimals = parseInt(lockTokenDecimals) || 18;
-  return parseUnits(lockAmount, decimals);
+  return parseUnits(lockAmount, lockTokenEffectiveDecimals);
 }
 
   // 打开锁仓弹窗
@@ -853,6 +937,24 @@ useEffect(() => {
     
     return null; // 可以提取
   }, [selectedToken, selectedTokenLockInfo]);
+
+  // 可提取的全精度数量（锁仓记录中的 lockedAmount），用于「全部」按钮回填
+  const withdrawMaxExact = useMemo(() => {
+    if (!selectedToken || !selectedTokenLockInfo) return null;
+    const lockedAmount = (selectedTokenLockInfo as [bigint, boolean, bigint, bigint])[3];
+    if (lockedAmount == null || BigInt(lockedAmount) <= BigInt(0)) return null;
+    try {
+      return formatUnits(BigInt(lockedAmount), selectedToken.decimals || 18);
+    } catch (err) {
+      return null;
+    }
+  }, [selectedToken, selectedTokenLockInfo]);
+
+  // 「全部」：把可提取数量回填到提取数量
+  const handleFillMaxWithdrawAmount = () => {
+    if (!withdrawMaxExact) return;
+    setWithdrawAmount(withdrawMaxExact);
+  };
 
   // 发起提取
   const handleWithdraw = () => {
@@ -1290,6 +1392,24 @@ useEffect(() => {
                     }
                   />
 
+                  {/* 填入合约地址后，显示当前连接钱包在该代币上的余额 */}
+                  {isValidAddress(lockTokenAddress) && (
+                    <div className="flex items-center justify-between gap-2 px-1 text-sm">
+                      <span className="text-default-500">
+                        当前钱包余额{address ? `（${formatAddress(address)}）` : ''}
+                      </span>
+                      <span className="font-semibold text-default-700">
+                        {!address
+                          ? '请先连接钱包'
+                          : lockTokenWalletBalanceDisplay != null
+                            ? `${lockTokenWalletBalanceDisplay}${lockTokenSymbol ? ` ${lockTokenSymbol}` : ''}`
+                            : isLockTokenBalanceFetching
+                              ? '查询中...'
+                              : '查询失败'}
+                      </span>
+                    </div>
+                  )}
+
                   <Input
                     label="代币精度 (Decimals)"
                     placeholder="18"
@@ -1310,6 +1430,18 @@ useEffect(() => {
                     type="number"
                     isInvalid={lockAmount !== '' && Number(lockAmount) <= 0}
                     errorMessage={lockAmount !== '' && Number(lockAmount) <= 0 ? '请输入大于0的数量' : ''}
+                    endContent={
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        color="primary"
+                        onPress={handleFillMaxLockAmount}
+                        isDisabled={!lockTokenWalletBalanceExact || Number(lockTokenWalletBalanceExact) <= 0}
+                        className="min-w-unit-16"
+                      >
+                        全部
+                      </Button>
+                    }
                   />
                   
                   <Input
@@ -1455,6 +1587,18 @@ useEffect(() => {
                         ? `可提取数量: ${formatAmount(Number(formatUnits((selectedTokenLockInfo as any)[3], selectedToken.decimals || 18)))}`
                         : `合约余额: ${selectedToken.amount}`}
                       type="number"
+                      endContent={
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="primary"
+                          onPress={handleFillMaxWithdrawAmount}
+                          isDisabled={!withdrawMaxExact}
+                          className="min-w-unit-16"
+                        >
+                          全部
+                        </Button>
+                      }
                     />
                     
                     {/* 显示锁定信息 */}
