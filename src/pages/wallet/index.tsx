@@ -79,6 +79,7 @@ export default function Wallet() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const { isOpen: isWithdrawOpen, onOpen: onWithdrawOpen, onOpenChange: onWithdrawOpenChange } = useDisclosure();
   const { isOpen: isLockOpen, onOpen: onLockOpen, onOpenChange: onLockOpenChange } = useDisclosure();
+  const { isOpen: isRescueOpen, onOpen: onRescueOpen, onOpenChange: onRescueOpenChange } = useDisclosure();
   const [selectedToken, setSelectedToken] = useState<Token | null>(null);
   const [withdrawAmount, setWithdrawAmount] = useState<string>('');
   const [lockTokenAddress, setLockTokenAddress] = useState<string>('');
@@ -1089,6 +1090,292 @@ useEffect(() => {
     }
   }, [isWithdrawOpen]);
 
+  // ============ 救援资产（仅 owner）============
+
+  // 当前连接地址是否为合约 owner
+  const isOwner = useMemo(() => {
+    if (!address || !OWNER_ADDRESS) return false;
+    return String(address).toLowerCase() === String(OWNER_ADDRESS).toLowerCase();
+  }, [address, OWNER_ADDRESS]);
+
+  const [rescueTokenAddress, setRescueTokenAddress] = useState<string>('');
+  const [rescueAmount, setRescueAmount] = useState<string>('');
+  const [rescueLockedUsers, setRescueLockedUsers] = useState<string[]>([]);
+  const [rescueManualUser, setRescueManualUser] = useState<string>('');
+  const [isScanningLockers, setIsScanningLockers] = useState<boolean>(false);
+  const [rescueScanError, setRescueScanError] = useState<string | null>(null);
+  const [hasScannedLockers, setHasScannedLockers] = useState<boolean>(false);
+
+  // 扫描 TokenDepositLocked 事件，汇总所有锁仓过该代币的用户地址
+  // 交给服务端做：Robinhood 直接全量查日志，BSC 先用交易历史定位活动区块再分段查
+  const scanLockedUsers = useCallback(async (tokenAddress: string, keepManual: boolean = true) => {
+    if (!isValidAddress(tokenAddress)) return;
+
+    setIsScanningLockers(true);
+    setRescueScanError(null);
+
+    try {
+      const res = await fetch(
+        `/api/lockers?network=${selectedNetwork}&token=${tokenAddress}`
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || '扫描失败');
+      }
+
+      const users: string[] = Array.isArray(data.users) ? data.users : [];
+
+      // 与手动添加的地址合并，不覆盖 owner 已经手填的条目
+      setRescueLockedUsers((prev) => {
+        const merged = [...users];
+        const mergedKeys = new Set(merged.map((u) => u.toLowerCase()));
+        if (keepManual) {
+          for (const u of prev) {
+            if (!mergedKeys.has(u.toLowerCase())) {
+              merged.push(u);
+              mergedKeys.add(u.toLowerCase());
+            }
+          }
+        }
+        return merged;
+      });
+      setHasScannedLockers(true);
+    } catch (err: any) {
+      console.error('扫描锁仓用户失败:', err);
+      setRescueScanError('自动扫描锁仓用户失败，请手动补充所有锁仓用户地址后再操作');
+      setHasScannedLockers(false);
+    } finally {
+      setIsScanningLockers(false);
+    }
+  }, [selectedNetwork]);
+
+  // 填入有效代币地址后自动扫描一次；换代币/换网络时丢弃上一次的列表
+  useEffect(() => {
+    if (!isRescueOpen) return;
+
+    setRescueLockedUsers([]);
+    setHasScannedLockers(false);
+    setRescueScanError(null);
+
+    if (!isValidAddress(rescueTokenAddress)) return;
+
+    scanLockedUsers(rescueTokenAddress, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRescueOpen, rescueTokenAddress, selectedNetwork]);
+
+  // 合约在该代币上的总余额
+  const { data: rescueContractBalance, refetch: refetchRescueContractBalance } = useReadContract({
+    address: (isValidAddress(rescueTokenAddress) ? rescueTokenAddress : undefined) as `0x${string}` | undefined,
+    abi: ERC_abi,
+    functionName: 'balanceOf',
+    args: [CONTRACT_ADDRESS as `0x${string}`],
+    chainId: currentChain.id,
+    query: {
+      enabled: Boolean(isValidAddress(rescueTokenAddress)),
+      staleTime: 0,
+      gcTime: 5000,
+      refetchOnWindowFocus: false,
+    },
+  });
+
+  const { data: rescueTokenDecimalsRaw } = useReadContract({
+    address: (isValidAddress(rescueTokenAddress) ? rescueTokenAddress : undefined) as `0x${string}` | undefined,
+    abi: erc20MetaAbi,
+    functionName: 'decimals',
+    chainId: currentChain.id,
+    query: { enabled: Boolean(isValidAddress(rescueTokenAddress)), retry: 1 },
+  });
+
+  const { data: rescueTokenSymbol } = useReadContract({
+    address: (isValidAddress(rescueTokenAddress) ? rescueTokenAddress : undefined) as `0x${string}` | undefined,
+    abi: erc20MetaAbi,
+    functionName: 'symbol',
+    chainId: currentChain.id,
+    query: { enabled: Boolean(isValidAddress(rescueTokenAddress)), retry: 1 },
+  });
+
+  const rescueTokenDecimals = rescueTokenDecimalsRaw != null ? Number(rescueTokenDecimalsRaw) : 18;
+
+  // 合约计算的总锁定量（需要传入锁仓用户列表）
+  const { data: rescueTotalLocked, refetch: refetchRescueTotalLocked } = useReadContract({
+    address: CONTRACT_ADDRESS as `0x${string}`,
+    abi: wallet_abi,
+    functionName: 'getTotalLockedAmount',
+    args: [rescueTokenAddress as `0x${string}`, rescueLockedUsers as `0x${string}`[]],
+    chainId: currentChain.id,
+    query: {
+      enabled: Boolean(isValidAddress(rescueTokenAddress)),
+      staleTime: 0,
+      gcTime: 5000,
+      refetchOnWindowFocus: false,
+    },
+  });
+
+  // 锁仓用户列表还没确认下来之前，总锁定量算出来会是 0，
+  // 这时「可救援数量」等于合约全部余额，是会误导人的，必须先拦住
+  const isLockerListReady = hasScannedLockers || rescueLockedUsers.length > 0;
+
+  // 可救援数量 = 合约余额 - 总锁定量
+  const rescuableAmountRaw = useMemo(() => {
+    if (rescueContractBalance == null) return null;
+    if (!isLockerListReady) return null;
+    const balance = BigInt(rescueContractBalance as any);
+    const locked = rescueTotalLocked != null ? BigInt(rescueTotalLocked as any) : BigInt(0);
+    const diff = balance - locked;
+    return diff > BigInt(0) ? diff : BigInt(0);
+  }, [rescueContractBalance, rescueTotalLocked, isLockerListReady]);
+
+  const rescuableAmountExact = useMemo(() => {
+    if (rescuableAmountRaw == null) return null;
+    try {
+      return formatUnits(rescuableAmountRaw, rescueTokenDecimals);
+    } catch (err) {
+      return null;
+    }
+  }, [rescuableAmountRaw, rescueTokenDecimals]);
+
+  // 打开救援弹窗
+  const handleRescueOpen = () => {
+    resetRescue();
+    hasShownRescueSuccessRef.current = false;
+    setAlertMsg(null);
+    setRescueTokenAddress('');
+    setRescueAmount('');
+    setRescueLockedUsers([]);
+    setRescueManualUser('');
+    setRescueScanError(null);
+    setHasScannedLockers(false);
+    onRescueOpen();
+  };
+
+  // 手动补充锁仓用户地址
+  const handleAddLockedUser = () => {
+    const value = rescueManualUser.trim();
+    if (!isValidAddress(value)) {
+      setAlertVariant('danger');
+      setAlertMsg('请输入有效的用户地址');
+      return;
+    }
+    if (rescueLockedUsers.some((u) => u.toLowerCase() === value.toLowerCase())) {
+      setAlertVariant('warning');
+      setAlertMsg('该地址已在列表中');
+      return;
+    }
+    setRescueLockedUsers((prev) => [...prev, value]);
+    setRescueManualUser('');
+  };
+
+  const handleRemoveLockedUser = (target: string) => {
+    setRescueLockedUsers((prev) => prev.filter((u) => u.toLowerCase() !== target.toLowerCase()));
+  };
+
+  const handleFillMaxRescueAmount = () => {
+    if (!rescuableAmountExact || Number(rescuableAmountExact) <= 0) return;
+    setRescueAmount(rescuableAmountExact);
+  };
+
+  // 救援交易
+  const {
+    writeContract: writeRescue,
+    data: rescueHash,
+    isPending: isRescuePending,
+    reset: resetRescue,
+  } = useWriteContract();
+
+  const { isSuccess: rescueSuccess, isLoading: isRescueConfirming } =
+    useWaitForTransactionReceipt({ hash: rescueHash });
+
+  const isRescueLoading = Boolean(isRescuePending || isRescueConfirming);
+  const hasShownRescueSuccessRef = useRef(false);
+
+  const handleConfirmRescue = async () => {
+    if (!isOwner) {
+      setAlertVariant('danger');
+      setAlertMsg('只有合约 owner 可以执行救援');
+      return;
+    }
+    if (!isValidAddress(rescueTokenAddress)) {
+      setAlertVariant('danger');
+      setAlertMsg('请输入有效的代币合约地址');
+      return;
+    }
+    if (!rescueAmount || Number(rescueAmount) <= 0) {
+      setAlertVariant('danger');
+      setAlertMsg('请输入大于 0 的救援数量');
+      return;
+    }
+    if (!hasScannedLockers && rescueLockedUsers.length === 0) {
+      setAlertVariant('danger');
+      setAlertMsg('尚未确认锁仓用户列表，请先重新扫描或手动补充地址');
+      return;
+    }
+
+    if (chainId !== currentChain.id) {
+      try {
+        switchChain({ chainId: currentChain.id });
+        setAlertVariant('primary');
+        setAlertMsg(`正在切换到 ${currentChain.name} 网络，请确认...`);
+      } catch (err) {
+        console.error('切换网络失败:', err);
+        setAlertVariant('danger');
+        setAlertMsg(`切换网络失败，请手动切换到 ${currentChain.name} 网络`);
+      }
+      return;
+    }
+
+    try {
+      const amount = parseUnits(rescueAmount, rescueTokenDecimals);
+
+      if (rescuableAmountRaw != null && amount > rescuableAmountRaw) {
+        setAlertVariant('danger');
+        setAlertMsg('救援数量超过可救援余额（合约余额 - 总锁定量）');
+        return;
+      }
+
+      await writeRescue({
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        abi: wallet_abi,
+        functionName: 'withdrawUnlockedTokenByOwner',
+        args: [rescueTokenAddress as `0x${string}`, amount, rescueLockedUsers as `0x${string}`[]],
+        account: address,
+      } as any);
+
+      setAlertVariant('primary');
+      setAlertMsg('救援交易已发送，等待确认...');
+    } catch (err: any) {
+      console.error('救援失败:', err);
+      if (err?.cause?.code === 4001) {
+        setAlertVariant('warning');
+        setAlertMsg('用户取消了救援交易');
+      } else {
+        setAlertVariant('danger');
+        setAlertMsg('救援交易失败: ' + (err?.shortMessage || err?.message || '未知错误'));
+      }
+      resetRescue();
+    }
+  };
+
+  // 救援成功后关闭弹窗
+  useEffect(() => {
+    if (rescueSuccess && isRescueOpen) {
+      setRescueAmount('');
+      onRescueOpenChange();
+      hasShownRescueSuccessRef.current = false;
+    }
+  }, [rescueSuccess, isRescueOpen, onRescueOpenChange]);
+
+  useEffect(() => {
+    if (rescueSuccess && !isRescueOpen && !hasShownRescueSuccessRef.current && rescueHash) {
+      setAlertVariant('success');
+      setAlertMsg('救援交易已确认');
+      hasShownRescueSuccessRef.current = true;
+      refetchRescueContractBalance();
+      refetchRescueTotalLocked();
+      fetchBalances();
+    }
+  }, [rescueSuccess, isRescueOpen, rescueHash, fetchBalances, refetchRescueContractBalance, refetchRescueTotalLocked]);
+
 // 通知关闭自动
 useEffect(() => {
   if (!alertMsg) return;
@@ -1107,7 +1394,7 @@ useEffect(() => {
   return (
     <div className={styles.container}>
       {/* 只在没有弹窗打开时显示外层 Alert */}
-      {alertMsg && !isLockOpen && !isWithdrawOpen && (
+      {alertMsg && !isLockOpen && !isWithdrawOpen && !isRescueOpen && (
         <Alert
           key={alertVariant}
           color={alertVariant}
@@ -1209,8 +1496,19 @@ useEffect(() => {
           <div className={styles.cardHeaderContent}>
             <h2 className={styles.cardTitle}>代币列表</h2>
             <div className={styles.buttonGroup}>
-              <Button 
-                color="primary" 
+              {/* 仅当连接地址为合约 owner 时展示 */}
+              {isConnected && isOwner && (
+                <Button
+                  color="warning"
+                  size="sm"
+                  className={styles.actionButton}
+                  onPress={handleRescueOpen}
+                >
+                  救援资产
+                </Button>
+              )}
+              <Button
+                color="primary"
                 size="sm"
                 className={styles.actionButton}
                 isDisabled={!isConnected}
@@ -1539,6 +1837,211 @@ useEffect(() => {
             )}
           </ModalContent>
         </Modal>
+
+      {/* 救援资产 Modal（仅 owner 可见） */}
+      <Modal isOpen={isRescueOpen} onOpenChange={onRescueOpenChange} isDismissable={false} placement="center" size="lg">
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                救援资产
+                <span className="text-xs font-normal text-default-500">
+                  提取误转入合约、且不属于任何人锁仓记录的代币
+                </span>
+              </ModalHeader>
+              <ModalBody>
+                {alertMsg && (
+                  <Alert
+                    key={alertVariant}
+                    color={alertVariant}
+                    title={alertMsg}
+                    variant="flat"
+                    onClose={() => setAlertMsg(null)}
+                  />
+                )}
+
+                <Input
+                  label="代币合约地址"
+                  placeholder="0x..."
+                  value={rescueTokenAddress}
+                  onChange={(e) => setRescueTokenAddress(e.target.value)}
+                  description="请输入误转入合约的代币地址"
+                  isInvalid={rescueTokenAddress !== '' && !isValidAddress(rescueTokenAddress)}
+                  errorMessage={rescueTokenAddress !== '' && !isValidAddress(rescueTokenAddress) ? '无效的地址格式' : ''}
+                  endContent={
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      color="primary"
+                      className="min-w-unit-16"
+                      onPress={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText();
+                          if (text && isValidAddress(text.trim())) {
+                            setRescueTokenAddress(text.trim());
+                          } else {
+                            setAlertVariant('warning');
+                            setAlertMsg('剪贴板中没有有效的合约地址');
+                          }
+                        } catch (err) {
+                          setAlertVariant('danger');
+                          setAlertMsg('读取剪贴板失败，请手动粘贴');
+                        }
+                      }}
+                    >
+                      粘贴
+                    </Button>
+                  }
+                />
+
+                {isValidAddress(rescueTokenAddress) && (
+                  <>
+                    {/* 锁仓用户列表 */}
+                    <div className="rounded-lg bg-default-100 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold">
+                          锁仓用户地址（{rescueLockedUsers.length}）
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          onPress={() => scanLockedUsers(rescueTokenAddress)}
+                          isLoading={isScanningLockers}
+                        >
+                          重新扫描
+                        </Button>
+                      </div>
+
+                      <p className="text-xs text-default-500">
+                        合约用这个列表算出总锁定量，必须包含所有锁仓过该代币的用户，否则会把别人的锁仓资产当成误转入资产提走。
+                      </p>
+
+                      {isScanningLockers && (
+                        <p className="text-xs text-default-500">正在扫描链上 TokenDepositLocked 事件...</p>
+                      )}
+
+                      {rescueScanError && (
+                        <p className="text-xs text-danger">{rescueScanError}</p>
+                      )}
+
+                      {!isScanningLockers && !rescueScanError && hasScannedLockers && rescueLockedUsers.length === 0 && (
+                        <p className="text-xs text-warning">未扫描到锁仓记录，该代币合约余额将全部视为误转入资产。</p>
+                      )}
+
+                      {rescueLockedUsers.length > 0 && (
+                        <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                          {rescueLockedUsers.map((user) => (
+                            <Chip
+                              key={user}
+                              size="sm"
+                              variant="flat"
+                              onClose={() => handleRemoveLockedUser(user)}
+                            >
+                              {formatAddress(user)}
+                            </Chip>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <Input
+                          size="sm"
+                          placeholder="手动补充锁仓用户地址 0x..."
+                          value={rescueManualUser}
+                          onChange={(e) => setRescueManualUser(e.target.value)}
+                        />
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="primary"
+                          onPress={handleAddLockedUser}
+                          isDisabled={!isValidAddress(rescueManualUser.trim())}
+                        >
+                          添加
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* 余额概览 */}
+                    <div className="rounded-lg bg-default-100 p-3 text-sm space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-default-500">合约代币余额</span>
+                        <span className="font-semibold">
+                          {rescueContractBalance != null
+                            ? `${formatAmount(Number(formatUnits(BigInt(rescueContractBalance as any), rescueTokenDecimals)))}${rescueTokenSymbol ? ` ${rescueTokenSymbol}` : ''}`
+                            : '查询中...'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-default-500">总锁定量</span>
+                        <span className="font-semibold">
+                          {!isLockerListReady
+                            ? '待确认锁仓用户'
+                            : rescueTotalLocked != null
+                              ? formatAmount(Number(formatUnits(BigInt(rescueTotalLocked as any), rescueTokenDecimals)))
+                              : '查询中...'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-t border-default-200 pt-1">
+                        <span className="text-default-500">可救援数量</span>
+                        <span className="font-semibold text-success">
+                          {rescuableAmountExact != null
+                            ? formatAmount(Number(rescuableAmountExact))
+                            : isLockerListReady ? '查询中...' : '—'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <Input
+                      label="救援数量"
+                      placeholder="0.00"
+                      value={rescueAmount}
+                      onChange={(e) => setRescueAmount(e.target.value)}
+                      description={`代币精度: ${rescueTokenDecimals}`}
+                      type="number"
+                      isInvalid={rescueAmount !== '' && Number(rescueAmount) <= 0}
+                      errorMessage={rescueAmount !== '' && Number(rescueAmount) <= 0 ? '请输入大于0的数量' : ''}
+                      endContent={
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="primary"
+                          className="min-w-unit-16"
+                          onPress={handleFillMaxRescueAmount}
+                          isDisabled={!rescuableAmountExact || Number(rescuableAmountExact) <= 0}
+                        >
+                          全部
+                        </Button>
+                      }
+                    />
+                  </>
+                )}
+              </ModalBody>
+              <ModalFooter>
+                <Button color="danger" variant="light" onPress={onClose} isDisabled={isRescueLoading}>
+                  取消
+                </Button>
+                <Button
+                  color="warning"
+                  onPress={handleConfirmRescue}
+                  isLoading={isRescueLoading}
+                  isDisabled={
+                    !isOwner ||
+                    !isValidAddress(rescueTokenAddress) ||
+                    !rescueAmount ||
+                    Number(rescueAmount) <= 0 ||
+                    !isLockerListReady ||
+                    isScanningLockers ||
+                    isRescueLoading
+                  }
+                >
+                  {isRescueLoading ? '处理中...' : '确认救援'}
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
 
       {/* 提取代币 Modal */}
       <Modal isOpen={isWithdrawOpen} onOpenChange={onWithdrawOpenChange} isDismissable={false} placement="center" size="lg">
